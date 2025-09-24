@@ -4,14 +4,25 @@ import logging
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional, List, Dict
 import sentry_sdk
 import uvicorn
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from starlette.routing import Route
 from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
+
+# Python execution imports
+import io
+import sys
+import time
+import uuid
+import pathlib
+import traceback
+import signal
+from contextlib import redirect_stdout, redirect_stderr
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +73,29 @@ POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
 
 mcp = FastMCP(_safe_name, streamable_http_path=STREAM_PATH, json_response=True)
 
+# CSV storage directory
+CSV_DIR = pathlib.Path("/work/csv")
+CSV_DIR.mkdir(parents=True, exist_ok=True)
+
+def _posix_time_limit(seconds: float):
+    """POSIX-only wall clock timeout using signals; noop elsewhere."""
+    class _TL:
+        def __enter__(self_):
+            self_.posix = (os.name == "posix" and hasattr(signal, "setitimer"))
+            if not self_.posix:
+                return
+            self_.old_handler = signal.getsignal(signal.SIGALRM)
+            def _raise(_sig, _frm):
+                raise TimeoutError("time limit exceeded")
+            signal.signal(signal.SIGALRM, _raise)
+            signal.setitimer(signal.ITIMER_REAL, float(seconds))
+        def __exit__(self_, exc_type, exc, tb):
+            if self_.posix:
+                signal.setitimer(signal.ITIMER_REAL, 0.0)
+                signal.signal(signal.SIGALRM, self_.old_handler)
+            return False
+    return _TL()
+
 # Add custom error handling for stream disconnections
 original_logger = logging.getLogger("mcp.server.streamable_http")
 
@@ -75,9 +109,69 @@ class StreamErrorFilter(logging.Filter):
 original_logger.addFilter(StreamErrorFilter())
 
 @mcp.tool()
+def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
+    """
+    Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
+
+    Parameters:
+        code (str): Python code to execute
+        timeout_sec (float): Execution timeout in seconds (default: 5.0)
+
+    Returns:
+        dict: Execution results with stdout, stderr, duration_ms, and error info
+
+    Available variables in execution environment:
+        - pd: pandas library
+        - np: numpy library
+        - CSV_PATH: path to /work/csv folder for reading/writing CSV files
+    """
+    logger.info(f"py_eval invoked with {len(code)} characters of code")
+
+    # Capture output
+    buf_out, buf_err = io.StringIO(), io.StringIO()
+    started = time.time()
+
+    try:
+        # Import scientific libraries in execution environment
+        import pandas as pd
+        import numpy as np
+
+        # Create execution environment
+        env = {
+            "__builtins__": __builtins__,
+            "pd": pd,
+            "np": np,
+            "CSV_PATH": str(CSV_DIR),
+        }
+
+        with redirect_stdout(buf_out), redirect_stderr(buf_err), _posix_time_limit(timeout_sec):
+            exec(code, env, env)
+        ok, error = True, None
+
+    except TimeoutError as e:
+        ok, error = False, f"Timeout: {e}"
+    except Exception:
+        ok, error = False, traceback.format_exc()
+
+    duration_ms = int((time.time() - started) * 1000)
+
+    result = {
+        "ok": ok,
+        "stdout": buf_out.getvalue(),
+        "stderr": buf_err.getvalue(),
+        "error": error,
+        "duration_ms": duration_ms,
+        "csv_path": str(CSV_DIR)
+    }
+
+    logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
+    return result
+
+@mcp.tool()
 def polygon_news(
     start_date: str = "",
-    end_date: str = ""
+    end_date: str = "",
+    save_csv: bool = False
 ) -> str:
     """
     Fetches market news from Polygon.io financial news aggregator within a specified date range.
@@ -87,11 +181,12 @@ def polygon_news(
             Defaults to 7 days before today if not provided.
         end_date (str, optional): The end date in 'YYYY-MM-DD' format.
             Defaults to today if not provided.
+        save_csv (bool, optional): If True, saves data to CSV file and returns filename.
 
     Returns:
-        str: A formatted table of news with datetime and topic.
+        str: A formatted table of news with datetime and topic, or CSV filename if save_csv=True.
     """
-    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}")
+    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}, save_csv={save_csv}")
 
     # Mock data for testing
     today = datetime.now()
@@ -110,14 +205,24 @@ def polygon_news(
         }
     ]
 
-    # Format as markdown table
-    result = "| Datetime | Topic |\n"
-    result += "|----------|-------|\n"
-    for news in mock_news:
-        result += f"| {news['datetime']} | {news['topic']} |\n"
+    if save_csv:
+        # Save to CSV file
+        import pandas as pd
+        df = pd.DataFrame(mock_news)
+        filename = f"{str(uuid.uuid4())[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"polygon_news saved CSV: {filename}")
+        return f"News data saved to: {filename}"
+    else:
+        # Format as markdown table
+        result = "| Datetime | Topic |\n"
+        result += "|----------|-------|\n"
+        for news in mock_news:
+            result += f"| {news['datetime']} | {news['topic']} |\n"
 
-    logger.info(f"polygon_news successful: returned {len(mock_news)} news items")
-    return result
+        logger.info(f"polygon_news successful: returned {len(mock_news)} news items")
+        return result
 
 
 
