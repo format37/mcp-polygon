@@ -1,0 +1,26 @@
+services:
+  mcp-polygon:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+    container_name: mcp-polygon-local
+    env_file:
+      - .env.local
+    environment:
+      - PORT=8009
+      - TZ=UTC
+      - MCP_NAME=polygon
+      - MCP_REQUIRE_AUTH=false
+      - MCP_ALLOW_URL_TOKENS=true
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - default
+      - mcp-shared
+
+networks:
+  mcp-shared:
+    external: true

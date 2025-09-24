@@ -1,2 +1,1 @@
-# mcp-polygon
-MCP connector to Polygon API
+Polygon MCP server aimed to provide Polygon API endpoints as MCP tools.

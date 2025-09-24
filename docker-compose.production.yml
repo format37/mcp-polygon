@@ -1,0 +1,34 @@
+services:
+  mcp-polygon:
+    container_name: mcp-polygon
+    runtime: runc
+    build:
+      context: backend
+      dockerfile: Dockerfile.prod
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - PORT=8006
+      - TZ=UTC
+      - MCP_NAME=${MCP_NAME:-polygon}
+      - MCP_TOKENS=${MCP_TOKENS}
+      - MCP_REQUIRE_AUTH=${MCP_REQUIRE_AUTH}
+      - MCP_ALLOW_URL_TOKENS=${MCP_ALLOW_URL_TOKENS}
+      - MCP_PUBLIC_BASE_URL=${MCP_PUBLIC_BASE_URL}
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    expose:
+      - "8006"
+    restart: unless-stopped
+    networks:
+      - default
+      - mcp-shared
+
+networks:
+  mcp-shared:
+    external: true
