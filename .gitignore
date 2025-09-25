@@ -1,3 +1,5 @@
 .env.production
+.env.local
 prompt.md
 csv/
+backend/__pycache__/

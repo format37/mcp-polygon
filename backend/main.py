@@ -13,6 +13,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
+from polygon_data_fetcher import (
+    fetch_ticker_details,
+    fetch_price_data,
+    calculate_price_metrics,
+    create_combined_analysis,
+    create_output_folder
+)
 
 # Python execution imports
 import io
@@ -225,6 +232,224 @@ def polygon_news(
         return result
 
 
+@mcp.tool()
+def polygon_ticker_details(
+    tickers: List[str],
+    save_csv: bool = True
+) -> str:
+    """
+    Fetch comprehensive ticker details including company info, market cap, sector, etc.
+
+    Parameters:
+        tickers (List[str]): List of ticker symbols (e.g., ['AAPL', 'MSFT'])
+        save_csv (bool): If True, saves data to CSV file and returns filename
+
+    Returns:
+        str: Success message with CSV filename or error message
+    """
+    logger.info(f"polygon_ticker_details invoked with {len(tickers)} tickers")
+
+    try:
+        # Create output directory in CSV folder
+        output_dir = CSV_DIR / f"ticker_details_{uuid.uuid4().hex[:8]}"
+        output_dir.mkdir(exist_ok=True)
+
+        # Fetch ticker details
+        df = fetch_ticker_details(tickers, output_dir if save_csv else None)
+
+        if df.empty:
+            return "No ticker details were retrieved"
+
+        if save_csv:
+            filename = f"ticker_details_{uuid.uuid4().hex[:8]}.csv"
+            filepath = CSV_DIR / filename
+            df.to_csv(filepath, index=False)
+            logger.info(f"Saved ticker details to {filename}")
+            return f"Ticker details saved to: {filename} ({len(df)} records)"
+        else:
+            # Return summary info
+            return f"Retrieved ticker details for {len(df)} tickers"
+
+    except Exception as e:
+        logger.error(f"Error in polygon_ticker_details: {e}")
+        return f"Error fetching ticker details: {str(e)}"
+
+
+@mcp.tool()
+def polygon_price_data(
+    tickers: List[str],
+    from_date: str = "",
+    to_date: str = "",
+    timespan: str = "day",
+    multiplier: int = 1,
+    save_csv: bool = True
+) -> str:
+    """
+    Fetch historical price data for tickers.
+
+    Parameters:
+        tickers (List[str]): List of ticker symbols
+        from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
+        to_date (str): End date in YYYY-MM-DD format (defaults to today)
+        timespan (str): Time span (day, week, month, quarter, year)
+        multiplier (int): Size of the time window
+        save_csv (bool): If True, saves data to CSV file and returns filename
+
+    Returns:
+        str: Success message with CSV filename or error message
+    """
+    logger.info(f"polygon_price_data invoked with {len(tickers)} tickers, dates {from_date} to {to_date}")
+
+    try:
+        # Set default dates if not provided
+        from_date_param = from_date if from_date else None
+        to_date_param = to_date if to_date else None
+
+        # Create output directory in CSV folder
+        output_dir = CSV_DIR / f"price_data_{uuid.uuid4().hex[:8]}"
+        output_dir.mkdir(exist_ok=True)
+
+        # Fetch price data
+        df = fetch_price_data(
+            tickers=tickers,
+            from_date=from_date_param,
+            to_date=to_date_param,
+            timespan=timespan,
+            multiplier=multiplier,
+            output_dir=output_dir if save_csv else None
+        )
+
+        if df.empty:
+            return "No price data were retrieved"
+
+        if save_csv:
+            filename = f"price_data_{uuid.uuid4().hex[:8]}.csv"
+            filepath = CSV_DIR / filename
+            df.to_csv(filepath, index=False)
+            logger.info(f"Saved price data to {filename}")
+            return f"Price data saved to: {filename} ({len(df)} records)"
+        else:
+            # Return summary info
+            return f"Retrieved price data: {len(df)} records for {len(df['ticker'].unique())} tickers"
+
+    except Exception as e:
+        logger.error(f"Error in polygon_price_data: {e}")
+        return f"Error fetching price data: {str(e)}"
+
+
+@mcp.tool()
+def polygon_price_metrics(
+    tickers: List[str],
+    from_date: str = "",
+    to_date: str = "",
+    save_csv: bool = True
+) -> str:
+    """
+    Calculate price-based metrics for tickers (requires fetching price data first).
+
+    Parameters:
+        tickers (List[str]): List of ticker symbols
+        from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
+        to_date (str): End date in YYYY-MM-DD format (defaults to today)
+        save_csv (bool): If True, saves data to CSV file and returns filename
+
+    Returns:
+        str: Success message with CSV filename or error message
+    """
+    logger.info(f"polygon_price_metrics invoked with {len(tickers)} tickers")
+
+    try:
+        # Set default dates if not provided
+        from_date_param = from_date if from_date else None
+        to_date_param = to_date if to_date else None
+
+        # First fetch price data
+        price_df = fetch_price_data(
+            tickers=tickers,
+            from_date=from_date_param,
+            to_date=to_date_param
+        )
+
+        if price_df.empty:
+            return "No price data available for metrics calculation"
+
+        # Calculate metrics
+        metrics_df = calculate_price_metrics(price_df)
+
+        if metrics_df.empty:
+            return "No metrics could be calculated"
+
+        if save_csv:
+            filename = f"price_metrics_{uuid.uuid4().hex[:8]}.csv"
+            filepath = CSV_DIR / filename
+            metrics_df.to_csv(filepath, index=False)
+            logger.info(f"Saved price metrics to {filename}")
+            return f"Price metrics saved to: {filename} ({len(metrics_df)} records)"
+        else:
+            # Return summary info
+            return f"Calculated price metrics for {len(metrics_df)} tickers"
+
+    except Exception as e:
+        logger.error(f"Error in polygon_price_metrics: {e}")
+        return f"Error calculating price metrics: {str(e)}"
+
+
+# @mcp.tool()
+# def polygon_combined_analysis(
+#     tickers: List[str],
+#     from_date: str = "",
+#     to_date: str = "",
+#     save_csv: bool = True
+# ) -> str:
+#     """
+#     Create a combined analysis with ticker details and price metrics.
+
+#     Parameters:
+#         tickers (List[str]): List of ticker symbols
+#         from_date (str): Start date for price data in YYYY-MM-DD format (defaults to 30 days ago)
+#         to_date (str): End date for price data in YYYY-MM-DD format (defaults to today)
+#         save_csv (bool): If True, saves data to CSV file and returns filename
+
+#     Returns:
+#         str: Success message with CSV filename or error message
+#     """
+#     logger.info(f"polygon_combined_analysis invoked with {len(tickers)} tickers")
+
+#     try:
+#         # Set default dates if not provided
+#         from_date_param = from_date if from_date else None
+#         to_date_param = to_date if to_date else None
+
+#         # Create output directory in CSV folder
+#         output_dir = CSV_DIR / f"combined_analysis_{uuid.uuid4().hex[:8]}"
+#         output_dir.mkdir(exist_ok=True)
+
+#         # Create combined analysis
+#         combined_df = create_combined_analysis(
+#             tickers=tickers,
+#             from_date=from_date_param,
+#             to_date=to_date_param,
+#             output_dir=output_dir if save_csv else None
+#         )
+
+#         if combined_df.empty:
+#             return "No data available for combined analysis"
+
+#         if save_csv:
+#             filename = f"combined_analysis_{uuid.uuid4().hex[:8]}.csv"
+#             filepath = CSV_DIR / filename
+#             combined_df.to_csv(filepath, index=False)
+#             logger.info(f"Saved combined analysis to {filename}")
+#             return f"Combined analysis saved to: {filename} ({len(combined_df)} records)"
+#         else:
+#             # Return summary info
+#             return f"Combined analysis completed for {len(combined_df)} tickers"
+
+#     except Exception as e:
+#         logger.error(f"Error in polygon_combined_analysis: {e}")
+#         return f"Error creating combined analysis: {str(e)}"
+
+
 
 @mcp.resource(
     f"{_safe_name}://documentation",
@@ -244,8 +469,62 @@ Fetches market news from Polygon.io financial news aggregator.
 **Parameters:**
 - `start_date` (optional): Start date in 'YYYY-MM-DD' format
 - `end_date` (optional): End date in 'YYYY-MM-DD' format
+- `save_csv` (optional): If True, saves data to CSV file
 
-**Returns:** Formatted table with datetime and topic columns.
+**Returns:** Formatted table with datetime and topic columns, or CSV filename if save_csv=True.
+
+### polygon_ticker_details
+Fetch comprehensive ticker details including company info, market cap, sector, etc.
+
+**Parameters:**
+- `tickers` (required): List of ticker symbols (e.g., ['AAPL', 'MSFT'])
+- `save_csv` (optional): If True, saves data to CSV file and returns filename
+
+**Returns:** Success message with CSV filename or summary information.
+
+### polygon_price_data
+Fetch historical price data for tickers.
+
+**Parameters:**
+- `tickers` (required): List of ticker symbols
+- `from_date` (optional): Start date in YYYY-MM-DD format (defaults to 30 days ago)
+- `to_date` (optional): End date in YYYY-MM-DD format (defaults to today)
+- `timespan` (optional): Time span (day, week, month, quarter, year)
+- `multiplier` (optional): Size of the time window
+- `save_csv` (optional): If True, saves data to CSV file and returns filename
+
+**Returns:** Success message with CSV filename or summary information.
+
+### polygon_price_metrics
+Calculate price-based metrics for tickers (volatility, returns, etc.).
+
+**Parameters:**
+- `tickers` (required): List of ticker symbols
+- `from_date` (optional): Start date in YYYY-MM-DD format (defaults to 30 days ago)
+- `to_date` (optional): End date in YYYY-MM-DD format (defaults to today)
+- `save_csv` (optional): If True, saves data to CSV file and returns filename
+
+**Returns:** Success message with CSV filename or summary information.
+
+### polygon_combined_analysis
+Create a combined analysis with ticker details and price metrics.
+
+**Parameters:**
+- `tickers` (required): List of ticker symbols
+- `from_date` (optional): Start date for price data in YYYY-MM-DD format (defaults to 30 days ago)
+- `to_date` (optional): End date for price data in YYYY-MM-DD format (defaults to today)
+- `save_csv` (optional): If True, saves data to CSV file and returns filename
+
+**Returns:** Success message with CSV filename or summary information.
+
+### py_eval
+Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
+
+**Parameters:**
+- `code` (required): Python code to execute
+- `timeout_sec` (optional): Execution timeout in seconds (default: 5.0)
+
+**Available variables:** pd (pandas), np (numpy), CSV_PATH (path to CSV folder)
 """
 
 # Build the main ASGI app with Streamable HTTP mounted
