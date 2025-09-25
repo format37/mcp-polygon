@@ -295,6 +295,12 @@ def polygon_news(
 
     Returns:
         str: A formatted table of news with datetime and topic, or CSV filename if save_csv=True.
+
+    CSV Output Structure (when save_csv=True):
+        - datetime (str): Publication date and time in 'YYYY-MM-DD HH:MM:SS' format
+        - topic (str): News article title/headline, truncated to 200 characters if longer
+
+    Use this data for: News sentiment analysis, market event tracking, timeline analysis
     """
     logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}, save_csv={save_csv}")
 
@@ -385,6 +391,37 @@ def polygon_ticker_details(
 
     Returns:
         str: Success message with CSV filename or error message
+
+    CSV Output Structure (when save_csv=True):
+        - ticker (str): Stock ticker symbol
+        - name (str): Company full name
+        - market_cap (float): Market capitalization in USD
+        - share_class_shares_outstanding (float): Number of shares outstanding for this share class
+        - weighted_shares_outstanding (float): Weighted average shares outstanding
+        - primary_exchange (str): Primary stock exchange code (e.g., 'XNAS' for NASDAQ)
+        - type (str): Security type (e.g., 'CS' for Common Stock)
+        - active (bool): Whether the ticker is actively traded
+        - currency_name (str): Currency denomination (e.g., 'usd')
+        - cik (str): SEC Central Index Key
+        - composite_figi (str): Financial Instrument Global Identifier
+        - share_class_figi (str): Share class specific FIGI
+        - locale (str): Market locale (e.g., 'us')
+        - description (str): Detailed company description
+        - homepage_url (str): Company website URL
+        - total_employees (int): Number of employees
+        - list_date (str): IPO/listing date in YYYY-MM-DD format
+        - logo_url (str): URL to company logo image
+        - icon_url (str): URL to company icon image
+        - sic_code (int): Standard Industrial Classification code
+        - sic_description (str): SIC code description
+        - ticker_root (str): Root ticker symbol
+        - phone_number (str): Company phone number
+        - address_1 (str): Primary address
+        - city (str): Company headquarters city
+        - state (str): Company headquarters state
+        - postal_code (str): ZIP/postal code
+
+    Use this data for: Company research, fundamental analysis, market cap screening, sector analysis
     """
     logger.info(f"polygon_ticker_details invoked with {len(tickers)} tickers")
 
@@ -436,6 +473,20 @@ def polygon_price_data(
 
     Returns:
         str: Success message with CSV filename or error message
+
+    CSV Output Structure (when save_csv=True):
+        - ticker (str): Stock ticker symbol
+        - timestamp (str): Trading session timestamp in 'YYYY-MM-DD HH:MM:SS' format
+        - open (float): Opening price for the period
+        - high (float): Highest price during the period
+        - low (float): Lowest price during the period
+        - close (float): Closing price for the period
+        - volume (float): Total trading volume for the period
+        - vwap (float): Volume Weighted Average Price
+        - transactions (int): Number of transactions during the period
+        - date (str): Trading date in 'YYYY-MM-DD' format
+
+    Use this data for: Technical analysis, price trend analysis, volume analysis, OHLC charting, volatility calculations
     """
     logger.info(f"polygon_price_data invoked with {len(tickers)} tickers, dates {from_date} to {to_date}")
 
@@ -494,6 +545,23 @@ def polygon_price_metrics(
 
     Returns:
         str: Success message with CSV filename or error message
+
+    CSV Output Structure (when save_csv=True):
+        - ticker (str): Stock ticker symbol
+        - start_date (str): Analysis period start date in 'YYYY-MM-DD' format
+        - end_date (str): Analysis period end date in 'YYYY-MM-DD' format
+        - trading_days (int): Number of trading days in the period
+        - start_price (float): Opening price on start date
+        - end_price (float): Closing price on end date
+        - high_price (float): Highest price during the period
+        - low_price (float): Lowest price during the period
+        - total_return (float): Total return as decimal (e.g., 0.12 = 12% gain)
+        - volatility (float): Price volatility (standard deviation of daily returns)
+        - avg_daily_volume (float): Average daily trading volume
+        - total_volume (float): Total volume traded during period
+        - price_range_ratio (float): (High - Low) / Low ratio indicating price range
+
+    Use this data for: Risk analysis, performance comparison, volatility assessment, return calculations, portfolio optimization
     """
     logger.info(f"polygon_price_metrics invoked with {len(tickers)} tickers")
 
