@@ -20,6 +20,7 @@ from polygon_data_fetcher import (
     create_combined_analysis,
     create_output_folder
 )
+from polygon import RESTClient
 
 # Python execution imports
 import io
@@ -78,6 +79,18 @@ def _sanitize_filename(name: str) -> str:
 # Polygon API configuration
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
 
+# Initialize Polygon client if API key is available
+polygon_client = None
+if POLYGON_API_KEY:
+    try:
+        polygon_client = RESTClient(POLYGON_API_KEY)
+        logger.info("Polygon RESTClient initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Polygon RESTClient: {e}")
+        polygon_client = None
+else:
+    logger.warning("POLYGON_API_KEY not provided, using mock data")
+
 mcp = FastMCP(_safe_name, streamable_http_path=STREAM_PATH, json_response=True)
 
 # CSV storage directory
@@ -114,6 +127,96 @@ class StreamErrorFilter(logging.Filter):
         return True
 
 original_logger.addFilter(StreamErrorFilter())
+
+
+def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int = 1000) -> list:
+    """
+    Fetch news data from Polygon.io API using RESTClient.
+
+    Args:
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        limit: Maximum number of results to fetch
+
+    Returns:
+        List of news articles with published_utc and description/title fields
+    """
+    if not polygon_client:
+        logger.warning("Polygon client not available, returning empty news list")
+        return []
+
+    try:
+        # Set default dates if not provided
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+
+        logger.info(f"Fetching news from {start_date} to {end_date}")
+
+        # Use the news endpoint to fetch articles
+        news_articles = []
+
+        # Fetch news for the date range
+        try:
+            news_data = polygon_client.list_ticker_news(
+                ticker=None,  # Get general market news
+                published_utc_gte=start_date,
+                published_utc_lte=end_date,
+                order="desc",
+                limit=limit,
+                sort="published_utc"
+            )
+
+            for article in news_data:
+                news_articles.append({
+                    'published_utc': article.published_utc,
+                    'title': getattr(article, 'title', ''),
+                    'description': getattr(article, 'description', ''),
+                    'author': getattr(article, 'author', ''),
+                    'article_url': getattr(article, 'article_url', ''),
+                    'tickers': getattr(article, 'tickers', [])
+                })
+
+        except Exception as e:
+            logger.warning(f"Error with ticker news endpoint, trying general news: {e}")
+            # Fallback to general news endpoint if ticker news fails
+            try:
+                # Use a more general approach
+                news_iter = polygon_client.list_ticker_news(limit=limit, order="desc", sort="published_utc")
+                count = 0
+                for article in news_iter:
+                    if count >= limit:
+                        break
+
+                    # Filter by date range if articles have published_utc
+                    article_date = getattr(article, 'published_utc', '')
+                    if article_date:
+                        article_datetime = datetime.fromisoformat(article_date.replace('Z', '+00:00'))
+                        start_datetime = datetime.fromisoformat(f"{start_date}T00:00:00+00:00")
+                        end_datetime = datetime.fromisoformat(f"{end_date}T23:59:59+00:00")
+
+                        if start_datetime <= article_datetime <= end_datetime:
+                            news_articles.append({
+                                'published_utc': article.published_utc,
+                                'title': getattr(article, 'title', ''),
+                                'description': getattr(article, 'description', ''),
+                                'author': getattr(article, 'author', ''),
+                                'article_url': getattr(article, 'article_url', ''),
+                                'tickers': getattr(article, 'tickers', [])
+                            })
+                    count += 1
+
+            except Exception as e2:
+                logger.error(f"Error fetching news with fallback method: {e2}")
+                return []
+
+        logger.info(f"Successfully fetched {len(news_articles)} news articles")
+        return news_articles
+
+    except Exception as e:
+        logger.error(f"Error fetching news data: {e}")
+        return []
 
 @mcp.tool()
 def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
@@ -195,40 +298,76 @@ def polygon_news(
     """
     logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}, save_csv={save_csv}")
 
-    # Mock data for testing
-    today = datetime.now()
-    mock_news = [
-        {
-            "datetime": (today - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S"),
-            "topic": "Federal Reserve announces interest rate decision"
-        },
-        {
-            "datetime": (today - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S"),
-            "topic": "Tech stocks surge on AI developments"
-        },
-        {
-            "datetime": today.strftime("%Y-%m-%d %H:%M:%S"),
-            "topic": "Energy sector shows strong quarterly earnings"
-        }
-    ]
+    # Try to fetch real data from Polygon API
+    news_data = fetch_polygon_news_data(start_date, end_date, limit=100)
+
+    # If no real data available, fall back to mock data
+    if not news_data:
+        logger.warning("No real news data available, using mock data")
+        today = datetime.now()
+        news_data = [
+            {
+                "published_utc": (today - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "title": "Federal Reserve announces interest rate decision",
+                "description": "Federal Reserve announces interest rate decision"
+            },
+            {
+                "published_utc": (today - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "title": "Tech stocks surge on AI developments",
+                "description": "Tech stocks surge on AI developments"
+            },
+            {
+                "published_utc": today.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "title": "Energy sector shows strong quarterly earnings",
+                "description": "Energy sector shows strong quarterly earnings"
+            }
+        ]
+
+    # Convert to format suitable for CSV/table display
+    processed_news = []
+    for article in news_data:
+        # Parse the published_utc datetime
+        try:
+            if article.get('published_utc'):
+                # Handle both Z and +00:00 timezone formats
+                dt_str = article['published_utc']
+                if dt_str.endswith('Z'):
+                    dt_str = dt_str[:-1] + '+00:00'
+                dt = datetime.fromisoformat(dt_str)
+                formatted_datetime = dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                formatted_datetime = "Unknown"
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Error parsing datetime: {e}")
+            formatted_datetime = str(article.get('published_utc', 'Unknown'))
+
+        # Get title or description as the topic
+        topic = article.get('title') or article.get('description', 'No title available')
+
+        processed_news.append({
+            "datetime": formatted_datetime,
+            "topic": topic[:200] + "..." if len(topic) > 200 else topic  # Truncate long topics
+        })
 
     if save_csv:
         # Save to CSV file
         import pandas as pd
-        df = pd.DataFrame(mock_news)
-        filename = f"{str(uuid.uuid4())[:8]}.csv"
+        df = pd.DataFrame(processed_news)
+        filename = f"news_{str(uuid.uuid4())[:8]}.csv"
         filepath = CSV_DIR / filename
         df.to_csv(filepath, index=False)
         logger.info(f"polygon_news saved CSV: {filename}")
-        return f"News data saved to: {filename}"
+        return f"News data saved to: {filename} ({len(processed_news)} articles)"
     else:
         # Format as markdown table
         result = "| Datetime | Topic |\n"
         result += "|----------|-------|\n"
-        for news in mock_news:
-            result += f"| {news['datetime']} | {news['topic']} |\n"
+        for news in processed_news:
+            # Escape pipe characters in the topic to prevent markdown table issues
+            topic_escaped = news['topic'].replace('|', '&#124;')
+            result += f"| {news['datetime']} | {topic_escaped} |\n"
 
-        logger.info(f"polygon_news successful: returned {len(mock_news)} news items")
+        logger.info(f"polygon_news successful: returned {len(processed_news)} news items")
         return result
 
 
