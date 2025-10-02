@@ -94,7 +94,7 @@ else:
 mcp = FastMCP(_safe_name, streamable_http_path=STREAM_PATH, json_response=True)
 
 # CSV storage directory
-CSV_DIR = pathlib.Path("/work/csv")
+CSV_DIR = pathlib.Path("data/mcp-polygon")
 CSV_DIR.mkdir(parents=True, exist_ok=True)
 
 def _format_csv_response(filepath: pathlib.Path, df: Any) -> str:
@@ -202,7 +202,7 @@ def _format_csv_response(filepath: pathlib.Path, df: Any) -> str:
 
     # Create Python snippet
     python_snippet = f"""import pandas as pd
-df = pd.read_csv(f'{{CSV_PATH}}/{filename}')
+df = pd.read_csv('data/mcp-polygon/{filename}')
 print(df.info())
 print(df.head())"""
 
@@ -362,7 +362,7 @@ def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
     Available variables in execution environment:
         - pd: pandas library
         - np: numpy library
-        - CSV_PATH: path to /work/csv folder for reading/writing CSV files
+        - CSV_PATH: path to data/mcp-polygon folder for reading/writing CSV files
     """
     logger.info(f"py_eval invoked with {len(code)} characters of code")
 
@@ -425,7 +425,7 @@ def polygon_news(
 
     CSV Output Structure:
         - datetime (str): Publication date and time in 'YYYY-MM-DD HH:MM:SS' format
-        - topic (str): News article title/headline, truncated to 200 characters if longer
+        - topic (str): News article title/headline
 
     Use this data for: News sentiment analysis, market event tracking, timeline analysis.
     Always use py_eval tool to analyze the saved CSV file.
@@ -434,28 +434,6 @@ def polygon_news(
 
     # Try to fetch real data from Polygon API
     news_data = fetch_polygon_news_data(start_date, end_date, limit=100)
-
-    # If no real data available, fall back to mock data
-    if not news_data:
-        logger.warning("No real news data available, using mock data")
-        today = datetime.now()
-        news_data = [
-            {
-                "published_utc": (today - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "title": "Federal Reserve announces interest rate decision",
-                "description": "Federal Reserve announces interest rate decision"
-            },
-            {
-                "published_utc": (today - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "title": "Tech stocks surge on AI developments",
-                "description": "Tech stocks surge on AI developments"
-            },
-            {
-                "published_utc": today.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "title": "Energy sector shows strong quarterly earnings",
-                "description": "Energy sector shows strong quarterly earnings"
-            }
-        ]
 
     # Convert to format suitable for CSV
     processed_news = []
@@ -480,7 +458,7 @@ def polygon_news(
 
         processed_news.append({
             "datetime": formatted_datetime,
-            "topic": topic[:200] + "..." if len(topic) > 200 else topic  # Truncate long topics
+            "topic": topic
         })
 
     # Always save to CSV file

@@ -16,7 +16,6 @@ services:
       - "8009:8009"
     volumes:
       - ./data:/app/data
-      - ./csv:/work/csv
     restart: unless-stopped
     networks:
       - default
