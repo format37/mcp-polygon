@@ -97,6 +97,135 @@ mcp = FastMCP(_safe_name, streamable_http_path=STREAM_PATH, json_response=True)
 CSV_DIR = pathlib.Path("/work/csv")
 CSV_DIR.mkdir(parents=True, exist_ok=True)
 
+def _format_csv_response(filepath: pathlib.Path, df: Any) -> str:
+    """
+    Generate standardized response format for CSV data files.
+
+    Args:
+        filepath: Path to the saved CSV file
+        df: DataFrame that was saved
+
+    Returns:
+        Formatted string with file info, schema, sample data, and Python snippet
+    """
+    import json
+    import pandas as pd
+
+    # Get file size
+    file_size_bytes = filepath.stat().st_size
+    if file_size_bytes < 1024:
+        size_str = f"{file_size_bytes} bytes"
+    elif file_size_bytes < 1024 * 1024:
+        size_str = f"{file_size_bytes / 1024:.1f} KB"
+    else:
+        size_str = f"{file_size_bytes / (1024 * 1024):.1f} MB"
+
+    # Get filename only (relative to CSV_PATH)
+    filename = filepath.name
+
+    # Infer better data types for schema
+    def infer_better_type(series):
+        """Infer a more descriptive data type for a pandas Series."""
+        # Remove nulls for analysis
+        non_null = series.dropna()
+
+        if len(non_null) == 0:
+            return "string (empty)"
+
+        # Check current dtype first
+        dtype_str = str(series.dtype)
+
+        # If already a good type, keep it
+        if 'int' in dtype_str:
+            return dtype_str
+        if 'float' in dtype_str:
+            return dtype_str
+        if 'bool' in dtype_str:
+            return 'boolean'
+        if 'datetime' in dtype_str:
+            return 'datetime'
+
+        # Try to infer better types for 'object' columns
+        if dtype_str == 'object':
+            # Try boolean
+            if non_null.isin([0, 1, '0', '1', True, False, 'True', 'False', 'true', 'false']).all():
+                return 'boolean'
+
+            # Try integer
+            try:
+                converted = pd.to_numeric(non_null, errors='raise')
+                if (converted == converted.astype(int)).all():
+                    return 'integer'
+            except (ValueError, TypeError):
+                pass
+
+            # Try float
+            try:
+                pd.to_numeric(non_null, errors='raise')
+                return 'float'
+            except (ValueError, TypeError):
+                pass
+
+            # Try datetime
+            try:
+                pd.to_datetime(non_null, errors='raise')
+                return 'datetime'
+            except (ValueError, TypeError):
+                pass
+
+            return 'string'
+
+        return dtype_str
+
+    # Build schema JSON with inferred types
+    schema = {col: infer_better_type(df[col]) for col in df.columns}
+    schema_json = json.dumps(schema, indent=2)
+
+    # Generate sample data (first row) as markdown table
+    if len(df) > 0:
+        sample_df = df.head(1)
+        # Create markdown table manually for better control
+        headers = list(sample_df.columns)
+        values = [str(v) for v in sample_df.iloc[0].values]
+
+        # Truncate long values for display
+        values = [v[:50] + "..." if len(v) > 50 else v for v in values]
+
+        # Build markdown table
+        header_row = "| " + " | ".join(headers) + " |"
+        separator = "|" + "|".join(["-" * (len(h) + 2) for h in headers]) + "|"
+        value_row = "| " + " | ".join(values) + " |"
+
+        sample_table = f"{header_row}\n{separator}\n{value_row}"
+    else:
+        sample_table = "(empty dataset)"
+
+    # Create Python snippet
+    python_snippet = f"""import pandas as pd
+df = pd.read_csv(f'{{CSV_PATH}}/{filename}')
+print(df.info())
+print(df.head())"""
+
+    # Build final response
+    response = f"""✓ Data saved to CSV
+
+File: {filename}
+Rows: {len(df)}
+Size: {size_str}
+
+Schema (JSON):
+{schema_json}
+
+Sample (first row):
+{sample_table}
+
+Python snippet to load:
+```python
+{python_snippet}
+```"""
+
+    return response
+
 def _posix_time_limit(seconds: float):
     """POSIX-only wall clock timeout using signals; noop elsewhere."""
     class _TL:
@@ -280,29 +409,28 @@ def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
 @mcp.tool()
 def polygon_news(
     start_date: str = "",
-    end_date: str = "",
-    save_csv: bool = False
+    end_date: str = ""
 ) -> str:
     """
-    Fetches market news from Polygon.io financial news aggregator within a specified date range.
+    Fetches market news from Polygon.io and saves to CSV file.
 
     Parameters:
         start_date (str, optional): The start date in 'YYYY-MM-DD' format.
             Defaults to 7 days before today if not provided.
         end_date (str, optional): The end date in 'YYYY-MM-DD' format.
             Defaults to today if not provided.
-        save_csv (bool, optional): If True, saves data to CSV file and returns filename.
 
     Returns:
-        str: A formatted table of news with datetime and topic, or CSV filename if save_csv=True.
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
 
-    CSV Output Structure (when save_csv=True):
+    CSV Output Structure:
         - datetime (str): Publication date and time in 'YYYY-MM-DD HH:MM:SS' format
         - topic (str): News article title/headline, truncated to 200 characters if longer
 
-    Use this data for: News sentiment analysis, market event tracking, timeline analysis
+    Use this data for: News sentiment analysis, market event tracking, timeline analysis.
+    Always use py_eval tool to analyze the saved CSV file.
     """
-    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}, save_csv={save_csv}")
+    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}")
 
     # Try to fetch real data from Polygon API
     news_data = fetch_polygon_news_data(start_date, end_date, limit=100)
@@ -329,7 +457,7 @@ def polygon_news(
             }
         ]
 
-    # Convert to format suitable for CSV/table display
+    # Convert to format suitable for CSV
     processed_news = []
     for article in news_data:
         # Parse the published_utc datetime
@@ -355,44 +483,32 @@ def polygon_news(
             "topic": topic[:200] + "..." if len(topic) > 200 else topic  # Truncate long topics
         })
 
-    if save_csv:
-        # Save to CSV file
-        import pandas as pd
-        df = pd.DataFrame(processed_news)
-        filename = f"news_{str(uuid.uuid4())[:8]}.csv"
-        filepath = CSV_DIR / filename
-        df.to_csv(filepath, index=False)
-        logger.info(f"polygon_news saved CSV: {filename}")
-        return f"News data saved to: {filename} ({len(processed_news)} articles)"
-    else:
-        # Format as markdown table
-        result = "| Datetime | Topic |\n"
-        result += "|----------|-------|\n"
-        for news in processed_news:
-            # Escape pipe characters in the topic to prevent markdown table issues
-            topic_escaped = news['topic'].replace('|', '&#124;')
-            result += f"| {news['datetime']} | {topic_escaped} |\n"
+    # Always save to CSV file
+    import pandas as pd
+    df = pd.DataFrame(processed_news)
+    filename = f"news_{str(uuid.uuid4())[:8]}.csv"
+    filepath = CSV_DIR / filename
+    df.to_csv(filepath, index=False)
+    logger.info(f"polygon_news saved CSV: {filename} ({len(processed_news)} articles)")
 
-        logger.info(f"polygon_news successful: returned {len(processed_news)} news items")
-        return result
+    # Return formatted response
+    return _format_csv_response(filepath, df)
 
 
 @mcp.tool()
 def polygon_ticker_details(
-    tickers: List[str],
-    save_csv: bool = True
+    tickers: List[str]
 ) -> str:
     """
-    Fetch comprehensive ticker details including company info, market cap, sector, etc.
+    Fetch comprehensive ticker details and save to CSV file.
 
     Parameters:
         tickers (List[str]): List of ticker symbols (e.g., ['AAPL', 'MSFT'])
-        save_csv (bool): If True, saves data to CSV file and returns filename
 
     Returns:
-        str: Success message with CSV filename or error message
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
 
-    CSV Output Structure (when save_csv=True):
+    CSV Output Structure:
         - ticker (str): Stock ticker symbol
         - name (str): Company full name
         - market_cap (float): Market capitalization in USD
@@ -421,30 +537,26 @@ def polygon_ticker_details(
         - state (str): Company headquarters state
         - postal_code (str): ZIP/postal code
 
-    Use this data for: Company research, fundamental analysis, market cap screening, sector analysis
+    Use this data for: Company research, fundamental analysis, market cap screening, sector analysis.
+    Always use py_eval tool to analyze the saved CSV file.
     """
     logger.info(f"polygon_ticker_details invoked with {len(tickers)} tickers")
 
     try:
-        # Create output directory in CSV folder
-        output_dir = CSV_DIR / f"ticker_details_{uuid.uuid4().hex[:8]}"
-        output_dir.mkdir(exist_ok=True)
-
-        # Fetch ticker details
-        df = fetch_ticker_details(tickers, output_dir if save_csv else None)
+        # Fetch ticker details (no output_dir, we'll save separately)
+        df = fetch_ticker_details(tickers, output_dir=None)
 
         if df.empty:
             return "No ticker details were retrieved"
 
-        if save_csv:
-            filename = f"ticker_details_{uuid.uuid4().hex[:8]}.csv"
-            filepath = CSV_DIR / filename
-            df.to_csv(filepath, index=False)
-            logger.info(f"Saved ticker details to {filename}")
-            return f"Ticker details saved to: {filename} ({len(df)} records)"
-        else:
-            # Return summary info
-            return f"Retrieved ticker details for {len(df)} tickers"
+        # Always save to CSV file
+        filename = f"ticker_details_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved ticker details to {filename} ({len(df)} records)")
+
+        # Return formatted response
+        return _format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_ticker_details: {e}")
@@ -457,11 +569,10 @@ def polygon_price_data(
     from_date: str = "",
     to_date: str = "",
     timespan: str = "day",
-    multiplier: int = 1,
-    save_csv: bool = True
+    multiplier: int = 1
 ) -> str:
     """
-    Fetch historical price data for tickers.
+    Fetch historical price data and save to CSV file.
 
     Parameters:
         tickers (List[str]): List of ticker symbols
@@ -469,12 +580,11 @@ def polygon_price_data(
         to_date (str): End date in YYYY-MM-DD format (defaults to today)
         timespan (str): Time span (day, week, month, quarter, year)
         multiplier (int): Size of the time window
-        save_csv (bool): If True, saves data to CSV file and returns filename
 
     Returns:
-        str: Success message with CSV filename or error message
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
 
-    CSV Output Structure (when save_csv=True):
+    CSV Output Structure:
         - ticker (str): Stock ticker symbol
         - timestamp (str): Trading session timestamp in 'YYYY-MM-DD HH:MM:SS' format
         - open (float): Opening price for the period
@@ -486,7 +596,8 @@ def polygon_price_data(
         - transactions (int): Number of transactions during the period
         - date (str): Trading date in 'YYYY-MM-DD' format
 
-    Use this data for: Technical analysis, price trend analysis, volume analysis, OHLC charting, volatility calculations
+    Use this data for: Technical analysis, price trend analysis, volume analysis, OHLC charting, volatility calculations.
+    Always use py_eval tool to analyze the saved CSV file.
     """
     logger.info(f"polygon_price_data invoked with {len(tickers)} tickers, dates {from_date} to {to_date}")
 
@@ -495,32 +606,27 @@ def polygon_price_data(
         from_date_param = from_date if from_date else None
         to_date_param = to_date if to_date else None
 
-        # Create output directory in CSV folder
-        output_dir = CSV_DIR / f"price_data_{uuid.uuid4().hex[:8]}"
-        output_dir.mkdir(exist_ok=True)
-
-        # Fetch price data
+        # Fetch price data (no output_dir, we'll save separately)
         df = fetch_price_data(
             tickers=tickers,
             from_date=from_date_param,
             to_date=to_date_param,
             timespan=timespan,
             multiplier=multiplier,
-            output_dir=output_dir if save_csv else None
+            output_dir=None
         )
 
         if df.empty:
             return "No price data were retrieved"
 
-        if save_csv:
-            filename = f"price_data_{uuid.uuid4().hex[:8]}.csv"
-            filepath = CSV_DIR / filename
-            df.to_csv(filepath, index=False)
-            logger.info(f"Saved price data to {filename}")
-            return f"Price data saved to: {filename} ({len(df)} records)"
-        else:
-            # Return summary info
-            return f"Retrieved price data: {len(df)} records for {len(df['ticker'].unique())} tickers"
+        # Always save to CSV file
+        filename = f"price_data_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved price data to {filename} ({len(df)} records)")
+
+        # Return formatted response
+        return _format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_price_data: {e}")
@@ -531,22 +637,20 @@ def polygon_price_data(
 def polygon_price_metrics(
     tickers: List[str],
     from_date: str = "",
-    to_date: str = "",
-    save_csv: bool = True
+    to_date: str = ""
 ) -> str:
     """
-    Calculate price-based metrics for tickers (requires fetching price data first).
+    Calculate price-based metrics and save to CSV file.
 
     Parameters:
         tickers (List[str]): List of ticker symbols
         from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
         to_date (str): End date in YYYY-MM-DD format (defaults to today)
-        save_csv (bool): If True, saves data to CSV file and returns filename
 
     Returns:
-        str: Success message with CSV filename or error message
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
 
-    CSV Output Structure (when save_csv=True):
+    CSV Output Structure:
         - ticker (str): Stock ticker symbol
         - start_date (str): Analysis period start date in 'YYYY-MM-DD' format
         - end_date (str): Analysis period end date in 'YYYY-MM-DD' format
@@ -561,7 +665,8 @@ def polygon_price_metrics(
         - total_volume (float): Total volume traded during period
         - price_range_ratio (float): (High - Low) / Low ratio indicating price range
 
-    Use this data for: Risk analysis, performance comparison, volatility assessment, return calculations, portfolio optimization
+    Use this data for: Risk analysis, performance comparison, volatility assessment, return calculations, portfolio optimization.
+    Always use py_eval tool to analyze the saved CSV file.
     """
     logger.info(f"polygon_price_metrics invoked with {len(tickers)} tickers")
 
@@ -586,77 +691,18 @@ def polygon_price_metrics(
         if metrics_df.empty:
             return "No metrics could be calculated"
 
-        if save_csv:
-            filename = f"price_metrics_{uuid.uuid4().hex[:8]}.csv"
-            filepath = CSV_DIR / filename
-            metrics_df.to_csv(filepath, index=False)
-            logger.info(f"Saved price metrics to {filename}")
-            return f"Price metrics saved to: {filename} ({len(metrics_df)} records)"
-        else:
-            # Return summary info
-            return f"Calculated price metrics for {len(metrics_df)} tickers"
+        # Always save to CSV file
+        filename = f"price_metrics_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        metrics_df.to_csv(filepath, index=False)
+        logger.info(f"Saved price metrics to {filename} ({len(metrics_df)} records)")
+
+        # Return formatted response
+        return _format_csv_response(filepath, metrics_df)
 
     except Exception as e:
         logger.error(f"Error in polygon_price_metrics: {e}")
         return f"Error calculating price metrics: {str(e)}"
-
-
-# @mcp.tool()
-# def polygon_combined_analysis(
-#     tickers: List[str],
-#     from_date: str = "",
-#     to_date: str = "",
-#     save_csv: bool = True
-# ) -> str:
-#     """
-#     Create a combined analysis with ticker details and price metrics.
-
-#     Parameters:
-#         tickers (List[str]): List of ticker symbols
-#         from_date (str): Start date for price data in YYYY-MM-DD format (defaults to 30 days ago)
-#         to_date (str): End date for price data in YYYY-MM-DD format (defaults to today)
-#         save_csv (bool): If True, saves data to CSV file and returns filename
-
-#     Returns:
-#         str: Success message with CSV filename or error message
-#     """
-#     logger.info(f"polygon_combined_analysis invoked with {len(tickers)} tickers")
-
-#     try:
-#         # Set default dates if not provided
-#         from_date_param = from_date if from_date else None
-#         to_date_param = to_date if to_date else None
-
-#         # Create output directory in CSV folder
-#         output_dir = CSV_DIR / f"combined_analysis_{uuid.uuid4().hex[:8]}"
-#         output_dir.mkdir(exist_ok=True)
-
-#         # Create combined analysis
-#         combined_df = create_combined_analysis(
-#             tickers=tickers,
-#             from_date=from_date_param,
-#             to_date=to_date_param,
-#             output_dir=output_dir if save_csv else None
-#         )
-
-#         if combined_df.empty:
-#             return "No data available for combined analysis"
-
-#         if save_csv:
-#             filename = f"combined_analysis_{uuid.uuid4().hex[:8]}.csv"
-#             filepath = CSV_DIR / filename
-#             combined_df.to_csv(filepath, index=False)
-#             logger.info(f"Saved combined analysis to {filename}")
-#             return f"Combined analysis saved to: {filename} ({len(combined_df)} records)"
-#         else:
-#             # Return summary info
-#             return f"Combined analysis completed for {len(combined_df)} tickers"
-
-#     except Exception as e:
-#         logger.error(f"Error in polygon_combined_analysis: {e}")
-#         return f"Error creating combined analysis: {str(e)}"
-
-
 
 @mcp.resource(
     f"{_safe_name}://documentation",
