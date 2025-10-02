@@ -347,64 +347,64 @@ def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int
         logger.error(f"Error fetching news data: {e}")
         return []
 
-@mcp.tool()
-def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
-    """
-    Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
+# @mcp.tool()
+# def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
+#     """
+#     Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
 
-    Parameters:
-        code (str): Python code to execute
-        timeout_sec (float): Execution timeout in seconds (default: 5.0)
+#     Parameters:
+#         code (str): Python code to execute
+#         timeout_sec (float): Execution timeout in seconds (default: 5.0)
 
-    Returns:
-        dict: Execution results with stdout, stderr, duration_ms, and error info
+#     Returns:
+#         dict: Execution results with stdout, stderr, duration_ms, and error info
 
-    Available variables in execution environment:
-        - pd: pandas library
-        - np: numpy library
-        - CSV_PATH: path to data/mcp-polygon folder for reading/writing CSV files
-    """
-    logger.info(f"py_eval invoked with {len(code)} characters of code")
+#     Available variables in execution environment:
+#         - pd: pandas library
+#         - np: numpy library
+#         - CSV_PATH: path to data/mcp-polygon folder for reading/writing CSV files
+#     """
+#     logger.info(f"py_eval invoked with {len(code)} characters of code")
 
-    # Capture output
-    buf_out, buf_err = io.StringIO(), io.StringIO()
-    started = time.time()
+#     # Capture output
+#     buf_out, buf_err = io.StringIO(), io.StringIO()
+#     started = time.time()
 
-    try:
-        # Import scientific libraries in execution environment
-        import pandas as pd
-        import numpy as np
+#     try:
+#         # Import scientific libraries in execution environment
+#         import pandas as pd
+#         import numpy as np
 
-        # Create execution environment
-        env = {
-            "__builtins__": __builtins__,
-            "pd": pd,
-            "np": np,
-            "CSV_PATH": str(CSV_DIR),
-        }
+#         # Create execution environment
+#         env = {
+#             "__builtins__": __builtins__,
+#             "pd": pd,
+#             "np": np,
+#             "CSV_PATH": str(CSV_DIR),
+#         }
 
-        with redirect_stdout(buf_out), redirect_stderr(buf_err), _posix_time_limit(timeout_sec):
-            exec(code, env, env)
-        ok, error = True, None
+#         with redirect_stdout(buf_out), redirect_stderr(buf_err), _posix_time_limit(timeout_sec):
+#             exec(code, env, env)
+#         ok, error = True, None
 
-    except TimeoutError as e:
-        ok, error = False, f"Timeout: {e}"
-    except Exception:
-        ok, error = False, traceback.format_exc()
+#     except TimeoutError as e:
+#         ok, error = False, f"Timeout: {e}"
+#     except Exception:
+#         ok, error = False, traceback.format_exc()
 
-    duration_ms = int((time.time() - started) * 1000)
+#     duration_ms = int((time.time() - started) * 1000)
 
-    result = {
-        "ok": ok,
-        "stdout": buf_out.getvalue(),
-        "stderr": buf_err.getvalue(),
-        "error": error,
-        "duration_ms": duration_ms,
-        "csv_path": str(CSV_DIR)
-    }
+#     result = {
+#         "ok": ok,
+#         "stdout": buf_out.getvalue(),
+#         "stderr": buf_err.getvalue(),
+#         "error": error,
+#         "duration_ms": duration_ms,
+#         "csv_path": str(CSV_DIR)
+#     }
 
-    logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
-    return result
+#     logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
+#     return result
 
 @mcp.tool()
 def polygon_news(
