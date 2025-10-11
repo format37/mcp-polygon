@@ -258,14 +258,15 @@ class StreamErrorFilter(logging.Filter):
 original_logger.addFilter(StreamErrorFilter())
 
 
-def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int = 1000) -> list:
+def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int = 1000, ticker: str = "") -> list:
     """
     Fetch news data from Polygon.io API using RESTClient.
 
     Args:
-        start_date: Start date in YYYY-MM-DD format
-        end_date: End date in YYYY-MM-DD format
-        limit: Maximum number of results to fetch
+        start_date (optional): Start date in YYYY-MM-DD format
+        end_date (optional): End date in YYYY-MM-DD format
+        limit (optional): Maximum number of results to fetch. Default is 1000.
+        ticker (optional): Specific ticker symbol to fetch news for
 
     Returns:
         List of news articles with published_utc and description/title fields
@@ -281,7 +282,7 @@ def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int
         if not start_date:
             start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
 
-        logger.info(f"Fetching news from {start_date} to {end_date}")
+        logger.info(f"Fetching news from {start_date} to {end_date}" + (f" for ticker {ticker}" if ticker else " (general market news)"))
 
         # Use the news endpoint to fetch articles
         news_articles = []
@@ -289,7 +290,7 @@ def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int
         # Fetch news for the date range
         try:
             news_data = polygon_client.list_ticker_news(
-                ticker=None,  # Get general market news
+                ticker=ticker if ticker else None,  # Use specific ticker or None for general market news
                 published_utc_gte=start_date,
                 published_utc_lte=end_date,
                 order="desc",
@@ -409,7 +410,8 @@ def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int
 @mcp.tool()
 def polygon_news(
     start_date: str = "",
-    end_date: str = ""
+    end_date: str = "",
+    ticker: str = ""
 ) -> str:
     """
     Fetches market news from Polygon.io and saves to CSV file.
@@ -419,6 +421,8 @@ def polygon_news(
             Defaults to 7 days before today if not provided.
         end_date (str, optional): The end date in 'YYYY-MM-DD' format.
             Defaults to today if not provided.
+        ticker (str, optional): Specific ticker symbol to fetch news for (e.g., 'AAPL').
+            If not provided, fetches general market news.
 
     Returns:
         str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
@@ -430,10 +434,10 @@ def polygon_news(
     Use this data for: News sentiment analysis, market event tracking, timeline analysis.
     Always use py_eval tool to analyze the saved CSV file.
     """
-    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}")
+    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}, ticker={ticker}")
 
     # Try to fetch real data from Polygon API
-    news_data = fetch_polygon_news_data(start_date, end_date, limit=100)
+    news_data = fetch_polygon_news_data(start_date, end_date, limit=100, ticker=ticker)
 
     # Convert to format suitable for CSV
     processed_news = []
@@ -464,7 +468,7 @@ def polygon_news(
     # Always save to CSV file
     import pandas as pd
     df = pd.DataFrame(processed_news)
-    filename = f"news_{str(uuid.uuid4())[:8]}.csv"
+    filename = f"news_{ticker}_{str(uuid.uuid4())[:8]}.csv" if ticker else f"news_{str(uuid.uuid4())[:8]}.csv"
     filepath = CSV_DIR / filename
     df.to_csv(filepath, index=False)
     logger.info(f"polygon_news saved CSV: {filename} ({len(processed_news)} articles)")
