@@ -19,6 +19,7 @@ from polygon_data_fetcher import (
     fetch_crypto_aggregates,
     fetch_crypto_conditions,
     fetch_crypto_daily_open_close,
+    fetch_crypto_exchanges,
     calculate_price_metrics,
     create_combined_analysis,
     create_output_folder
@@ -1070,6 +1071,109 @@ def polygon_crypto_daily_open_close(
     except Exception as e:
         logger.error(f"Error in polygon_crypto_daily_open_close: {e}")
         return f"Error fetching crypto daily open/close: {str(e)}"
+
+
+@mcp.tool()
+def polygon_crypto_exchanges(
+    locale: str = ""
+) -> str:
+    """
+    Fetch cryptocurrency exchange reference data and save to CSV file.
+
+    This endpoint retrieves a list of known crypto exchanges including their identifiers,
+    names, market types, and other relevant attributes. This reference information helps map
+    exchange codes, understand market coverage, integrate exchange details into applications,
+    and ensure regulatory compliance.
+
+    Parameters:
+        locale (str, optional): Filter exchanges by geographical location.
+            Options: "us" (United States), "global" (international)
+            Default: "" (returns all locales)
+            Examples:
+            - "us": Only exchanges operating in the United States
+            - "global": Only international/global exchanges
+            - "" (empty): All exchanges regardless of locale
+
+    Returns:
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
+
+    CSV Output Structure:
+        - id (int): Unique identifier for this exchange in Polygon.io system
+        - name (str): Full official name of the exchange
+            Examples: "Binance", "Coinbase", "Kraken", "Bitfinex"
+        - acronym (str): Commonly used abbreviation for the exchange
+            Examples: "BNCE", "GDAX", "KRKN"
+        - asset_class (str): Type of assets traded (always "crypto" for this endpoint)
+        - locale (str): Geographical location identifier
+            Values: "us" (United States) or "global" (international)
+        - mic (str): Market Identifier Code following ISO 10383 standard
+            Used for regulatory reporting and market identification
+        - operating_mic (str): MIC of the entity that operates this exchange
+            May differ from 'mic' for exchanges with multiple operating entities
+        - participant_id (str): ID used by SIP (Securities Information Processor) to represent this exchange
+            Used in data feeds and market data aggregation
+        - type (str): Exchange classification type
+            Values: "exchange", "TRF" (Trade Reporting Facility), "SIP" (Securities Information Processor)
+        - url (str): Official website URL for the exchange (if available)
+            Example: "https://www.binance.com"
+
+    Use Cases:
+        - **Exchange Mapping**: Create lookup tables to map exchange codes to full names
+        - **Market Coverage Analysis**: Understand which exchanges are available in your data
+        - **Application Development**: Display exchange options in trading applications
+        - **Data Integration**: Integrate exchange details when processing trade/quote data
+        - **Regulatory Compliance**: Use MIC codes for regulatory reporting requirements
+        - **Exchange Selection**: Identify exchanges by locale for geographic-specific analysis
+        - **Trading Strategy**: Filter data by specific exchanges for venue-specific strategies
+
+    Reference Data Notes:
+        - This is metadata/reference data, not time-series trading data
+        - Exchange lists are relatively static; fetch once and cache for lookups
+        - Use returned data as a lookup table when processing crypto trades/quotes
+        - MIC codes are standard identifiers used across financial systems
+        - Some exchanges may have multiple MIC codes for different services
+
+    Integration Example:
+        1. Call this tool once to get all crypto exchanges
+        2. Use py_eval to load CSV and create exchange lookup dictionary
+        3. When analyzing trade data, cross-reference exchange IDs with this reference
+        4. Filter data by specific exchanges based on your trading strategy
+
+    Important Notes:
+        - This endpoint returns exchange metadata, not trading data
+        - Exchange information helps interpret where trades occurred
+        - Use 'mic' field for regulatory reporting and compliance
+        - 'participant_id' helps identify exchange in market data feeds
+
+    Always use py_eval tool to analyze the saved CSV file for exchange lookups and filtering.
+    """
+    logger.info(f"polygon_crypto_exchanges invoked" + (f": locale={locale}" if locale else ""))
+
+    try:
+        # Handle optional parameter (convert empty string to None)
+        locale_param = locale if locale else None
+
+        # Fetch crypto exchanges
+        df = fetch_crypto_exchanges(
+            locale=locale_param,
+            output_dir=None
+        )
+
+        if df.empty:
+            return "No crypto exchanges were retrieved. Please check your parameters."
+
+        # Always save to CSV file
+        filename = f"crypto_exchanges_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved crypto exchanges to {filename} ({len(df)} records)")
+
+        # Return formatted response
+        return _format_csv_response(filepath, df)
+
+    except Exception as e:
+        logger.error(f"Error in polygon_crypto_exchanges: {e}")
+        return f"Error fetching crypto exchanges: {str(e)}"
 
 
 @mcp.resource(

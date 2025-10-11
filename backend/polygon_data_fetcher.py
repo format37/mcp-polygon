@@ -535,6 +535,72 @@ def fetch_crypto_daily_open_close(ticker: str,
         return pd.DataFrame()
 
 
+def fetch_crypto_exchanges(locale: Optional[str] = None,
+                           output_dir: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Fetch cryptocurrency exchange reference data from Polygon.io.
+
+    This endpoint retrieves a list of known crypto exchanges including their identifiers,
+    names, market types, and other relevant attributes. This information helps map exchange
+    codes, understand market coverage, and integrate exchange details into applications.
+
+    Args:
+        locale: Optional locale filter ("us" or "global")
+        output_dir: Optional output directory to save CSV file
+
+    Returns:
+        DataFrame with crypto exchange metadata
+
+    Note:
+        This is reference/metadata data that provides exchange information for mapping
+        and understanding crypto market data. Fetch once and use as a lookup table.
+    """
+    logger.info(f"Fetching crypto exchanges" + (f" (locale={locale})" if locale else ""))
+
+    records = []
+    try:
+        # Build kwargs for the API call
+        kwargs = {'asset_class': 'crypto'}
+
+        if locale:
+            kwargs['locale'] = locale
+
+        # Fetch exchanges from Polygon API
+        exchanges = client.get_exchanges(**kwargs)
+
+        for exchange in exchanges:
+            # Extract all available fields
+            record = {
+                'id': getattr(exchange, 'id', None),
+                'name': getattr(exchange, 'name', None),
+                'acronym': getattr(exchange, 'acronym', None),
+                'asset_class': getattr(exchange, 'asset_class', None),
+                'locale': getattr(exchange, 'locale', None),
+                'mic': getattr(exchange, 'mic', None),
+                'operating_mic': getattr(exchange, 'operating_mic', None),
+                'participant_id': getattr(exchange, 'participant_id', None),
+                'type': getattr(exchange, 'type', None),
+                'url': getattr(exchange, 'url', None),
+            }
+            records.append(record)
+
+    except Exception as e:
+        logger.error(f"Error fetching crypto exchanges: {e}")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+
+    logger.info(f"Successfully fetched {len(df)} crypto exchanges")
+
+    # Save to CSV if output directory is provided
+    if output_dir and not df.empty:
+        csv_file = output_dir / "crypto_exchanges.csv"
+        df.to_csv(csv_file, index=False)
+        logger.info(f"Saved crypto exchanges to {csv_file}")
+
+    return df
+
+
 def calculate_price_metrics(price_df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate price-based metrics for each ticker.
