@@ -18,6 +18,7 @@ from polygon_data_fetcher import (
     fetch_price_data,
     fetch_crypto_aggregates,
     fetch_crypto_conditions,
+    fetch_crypto_daily_open_close,
     calculate_price_metrics,
     create_combined_analysis,
     create_output_folder
@@ -954,6 +955,121 @@ def polygon_crypto_conditions(
     except Exception as e:
         logger.error(f"Error in polygon_crypto_conditions: {e}")
         return f"Error fetching crypto conditions: {str(e)}"
+
+
+@mcp.tool()
+def polygon_crypto_daily_open_close(
+    ticker: str,
+    date: str,
+    adjusted: bool = True
+) -> str:
+    """
+    Fetch daily open/close data for a specific cryptocurrency pair on a specific date and save to CSV file.
+
+    This endpoint retrieves the opening and closing trades for a crypto pair, providing essential daily
+    pricing details for performance evaluation, historical analysis, and trading activity insights.
+
+    Parameters:
+        ticker (str, required): Cryptocurrency ticker symbol in format X:BASEUSD.
+            The 'X:' prefix indicates crypto exchange aggregation.
+            Examples:
+            - "X:BTCUSD" (Bitcoin/USD)
+            - "X:ETHUSD" (Ethereum/USD)
+            - "X:SOLUSD" (Solana/USD)
+            - "X:ADAUSD" (Cardano/USD)
+            - "X:DOGEUSD" (Dogecoin/USD)
+            - "X:MATICUSD" (Polygon/USD)
+            - "X:AVAXUSD" (Avalanche/USD)
+            - "X:LINKUSD" (Chainlink/USD)
+
+        date (str, required): The specific date for which to fetch open/close data.
+            Format: YYYY-MM-DD
+            Examples: "2024-01-15", "2023-12-31"
+            Note: Must be a past date (cannot fetch future dates)
+
+        adjusted (bool, optional): Whether results are adjusted for splits.
+            Default: True
+            - True: Results are adjusted for any splits (recommended for analysis)
+            - False: Raw, unadjusted results
+
+    Returns:
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
+
+    CSV Output Structure:
+        - ticker (str): Cryptocurrency ticker symbol (e.g., "X:BTCUSD")
+        - date (str): The requested date in 'YYYY-MM-DD' format
+        - symbol (str): The symbol pair evaluated (e.g., "BTC-USD")
+        - open (float): Opening price for the day in USD
+        - close (float): Closing price for the day in USD
+        - high (float): Highest price during the day in USD
+        - low (float): Lowest price during the day in USD
+        - volume (float): Total trading volume for the day (in base currency units)
+        - after_hours (float): After hours trading price (if available)
+        - pre_market (float): Pre-market trading price (if available)
+        - is_utc (bool): Whether timestamps are in UTC timezone
+        - num_opening_trades (int): Number of trades that constitute the opening price
+        - opening_volume_total (float): Total volume of all opening trades
+        - first_opening_trade_price (float): Price of the first opening trade
+        - num_closing_trades (int): Number of trades that constitute the closing price
+        - closing_volume_total (float): Total volume of all closing trades
+        - last_closing_trade_price (float): Price of the last closing trade
+
+    Use Cases:
+        - **Daily Performance Analysis**: Compare open vs. close to determine daily gains/losses
+        - **Historical Data Collection**: Build datasets for backtesting trading strategies
+        - **Portfolio Tracking**: Monitor daily changes in crypto holdings
+        - **Volatility Assessment**: Calculate daily price ranges (high - low) for risk analysis
+        - **Trading Pattern Analysis**: Identify opening/closing trade patterns and volumes
+        - **Price Discovery**: Understand how markets establish opening and closing prices
+        - **Risk Management**: Analyze daily drawdowns and price movements
+        - **Algorithm Development**: Train models on historical daily OHLC data
+
+    Important Notes:
+        - Crypto markets trade 24/7, so "open" and "close" refer to UTC day boundaries
+        - Opening trades occur at the start of the UTC day (00:00:00 UTC)
+        - Closing trades occur at the end of the UTC day (23:59:59 UTC)
+        - Multiple trades may comprise the opening/closing prices
+        - Trade counts and volumes provide liquidity insights
+        - Data is typically available 1-2 days after the trading day
+        - Use this for single-day snapshots; use polygon_crypto_aggregates for time series
+
+    Example Workflow:
+        1. Call this tool to fetch daily data for a specific date
+        2. Receive CSV filename in response
+        3. Use py_eval to load and analyze the CSV file
+        4. Calculate metrics like daily return, volatility, trade analysis
+
+    Always use py_eval tool to analyze the saved CSV file for trading decisions and insights.
+    """
+    logger.info(f"polygon_crypto_daily_open_close invoked: ticker={ticker}, date={date}, adjusted={adjusted}")
+
+    try:
+        # Fetch crypto daily open/close data
+        df = fetch_crypto_daily_open_close(
+            ticker=ticker,
+            date=date,
+            adjusted=adjusted,
+            output_dir=None
+        )
+
+        if df.empty:
+            return f"No daily open/close data were retrieved for {ticker} on {date}. Please check the ticker format (should be X:BASEUSD, e.g., X:BTCUSD) and ensure the date is valid and in the past."
+
+        # Always save to CSV file
+        # Clean ticker for filename (replace : with _)
+        clean_ticker = ticker.replace(':', '_')
+        clean_date = date.replace('-', '')
+        filename = f"crypto_daily_open_close_{clean_ticker}_{clean_date}_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved crypto daily open/close to {filename} ({len(df)} records)")
+
+        # Return formatted response
+        return _format_csv_response(filepath, df)
+
+    except Exception as e:
+        logger.error(f"Error in polygon_crypto_daily_open_close: {e}")
+        return f"Error fetching crypto daily open/close: {str(e)}"
 
 
 @mcp.resource(
