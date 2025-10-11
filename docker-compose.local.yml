@@ -12,11 +12,12 @@ services:
       - MCP_NAME=polygon
       - MCP_REQUIRE_AUTH=false
       - MCP_ALLOW_URL_TOKENS=true
+      - SENTRY_DSN=$SENTRY_DSN
     ports:
       - "8009:8009"
     volumes:
       - ./data:/app/data
-    restart: unless-stopped
+    # restart: unless-stopped
     networks:
       - default
       - mcp-shared

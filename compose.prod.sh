@@ -20,6 +20,17 @@ if [ ! -f ".env.prod" ]; then
     exit 1
 fi
 
+# Ensure data directory exists with correct permissions
+echo "📁 Setting up data directory..."
+mkdir -p ./data/mcp-polygon
+# Fix ownership to match the current user (who should match container UID 1000)
+if [ -w ./data ]; then
+    echo "✓ Data directory is writable"
+else
+    echo "⚠️  Fixing data directory permissions..."
+    sudo chown -R $USER:$USER ./data
+fi
+
 # Stop and remove existing containers to ensure fresh deployment
 echo "🛑 Stopping and removing existing containers..."
 docker compose -f docker-compose.prod.yml down
