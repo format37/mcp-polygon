@@ -821,6 +821,93 @@ def fetch_market_holidays(output_dir: Optional[Path] = None) -> pd.DataFrame:
     return df
 
 
+def fetch_market_status(output_dir: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Fetch current market status from Polygon.io.
+
+    This endpoint retrieves the current trading status for various exchanges and overall
+    financial markets, providing real-time indicators of whether markets are open, closed,
+    or operating in pre-market/after-hours sessions.
+
+    Args:
+        output_dir: Optional output directory to save CSV file
+
+    Returns:
+        DataFrame with current market status including exchange and currency market states
+
+    Note:
+        This endpoint returns a snapshot of the current market status at the time of the call.
+        Crypto markets trade 24/7, but traditional markets have specific hours.
+    """
+    logger.info("Fetching current market status")
+
+    try:
+        # Fetch market status
+        status = client.get_market_status()
+
+        # Build the record with flattened structure
+        # Try both camelCase (JSON) and snake_case (Python SDK) naming conventions
+        record = {
+            'fetched_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'server_time': getattr(status, 'server_time', None) or getattr(status, 'serverTime', None),
+            'market': getattr(status, 'market', None),
+            'after_hours': getattr(status, 'after_hours', None) if getattr(status, 'after_hours', None) is not None else getattr(status, 'afterHours', None),
+            'early_hours': getattr(status, 'early_hours', None) if getattr(status, 'early_hours', None) is not None else getattr(status, 'earlyHours', None),
+        }
+
+        # Extract currencies object
+        currencies = getattr(status, 'currencies', None)
+        if currencies:
+            record['crypto_status'] = getattr(currencies, 'crypto', None)
+            record['fx_status'] = getattr(currencies, 'fx', None)
+        else:
+            record['crypto_status'] = None
+            record['fx_status'] = None
+
+        # Extract exchanges object
+        exchanges = getattr(status, 'exchanges', None)
+        if exchanges:
+            record['nasdaq_status'] = getattr(exchanges, 'nasdaq', None)
+            record['nyse_status'] = getattr(exchanges, 'nyse', None)
+            record['otc_status'] = getattr(exchanges, 'otc', None)
+        else:
+            record['nasdaq_status'] = None
+            record['nyse_status'] = None
+            record['otc_status'] = None
+
+        # Extract indicesGroups object - handle all possible index groups dynamically
+        # Try both naming conventions: indicesGroups (camelCase) and indices_groups (snake_case)
+        indices_groups = getattr(status, 'indices_groups', None) or getattr(status, 'indicesGroups', None)
+        if indices_groups:
+            # List of known index groups from the documentation
+            index_group_keys = ['cccy', 'cgi', 'dow_jones', 'ftse_russell', 'msci',
+                               'mstar', 'mstarc', 'nasdaq', 's_and_p', 'societe_generale']
+            for key in index_group_keys:
+                record[f'index_{key}'] = getattr(indices_groups, key, None)
+        else:
+            # Add None for all index groups if not present
+            index_group_keys = ['cccy', 'cgi', 'dow_jones', 'ftse_russell', 'msci',
+                               'mstar', 'mstarc', 'nasdaq', 's_and_p', 'societe_generale']
+            for key in index_group_keys:
+                record[f'index_{key}'] = None
+
+        df = pd.DataFrame([record])
+
+        logger.info(f"Successfully fetched market status: market={record['market']}, crypto={record['crypto_status']}")
+
+        # Save to CSV if output directory is provided
+        if output_dir and not df.empty:
+            csv_file = output_dir / "market_status.csv"
+            df.to_csv(csv_file, index=False)
+            logger.info(f"Saved market status to {csv_file}")
+
+        return df
+
+    except Exception as e:
+        logger.error(f"Error fetching market status: {e}")
+        return pd.DataFrame()
+
+
 def calculate_price_metrics(price_df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate price-based metrics for each ticker.

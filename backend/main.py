@@ -23,6 +23,7 @@ from polygon_data_fetcher import (
     fetch_crypto_grouped_daily_bars,
     fetch_crypto_last_trade,
     fetch_market_holidays,
+    fetch_market_status,
     calculate_price_metrics,
     create_combined_analysis,
     create_output_folder
@@ -1498,6 +1499,120 @@ def polygon_market_holidays() -> str:
     except Exception as e:
         logger.error(f"Error in polygon_market_holidays: {e}")
         return f"Error fetching market holidays: {str(e)}"
+
+
+@mcp.tool()
+def polygon_market_status() -> str:
+    """
+    Fetch current market status across all exchanges and asset classes, and save to CSV file.
+
+    This endpoint retrieves the current trading status for various exchanges and overall financial
+    markets. It provides real-time indicators of whether markets are open, closed, or operating in
+    pre-market/after-hours sessions, along with timing details for the current state.
+
+    Parameters:
+        None (endpoint automatically returns current status snapshot)
+
+    Returns:
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
+
+    CSV Output Structure:
+        - fetched_at (str): Local timestamp when this data was fetched in 'YYYY-MM-DD HH:MM:SS' format
+        - server_time (str): API server time in RFC3339 format (e.g., "2020-11-10T17:37:37-05:00")
+            Use this as the authoritative timestamp for market status
+        - market (str): Overall market status across all exchanges
+            Values: "open", "closed", "extended-hours", "early-hours"
+        - after_hours (bool): Whether markets are in post-market hours (after normal trading)
+        - early_hours (bool): Whether markets are in pre-market hours (before normal trading)
+        - crypto_status (str): Status of cryptocurrency markets
+            Values: "open", "closed"
+            Note: Crypto markets typically trade 24/7, so usually "open"
+        - fx_status (str): Status of foreign exchange (forex) markets
+            Values: "open", "closed"
+            Note: FX markets trade nearly 24/7 on weekdays
+        - nasdaq_status (str): Status of NASDAQ exchange
+            Values: "open", "closed", "extended-hours", "early-close"
+        - nyse_status (str): Status of New York Stock Exchange
+            Values: "open", "closed", "extended-hours", "early-close"
+        - otc_status (str): Status of Over-The-Counter markets
+            Values: "open", "closed"
+        - index_cccy (str): Status of Cboe Streaming Market Indices Cryptocurrency ("CCCY") indices
+        - index_cgi (str): Status of Cboe Global Indices ("CGI") trading hours
+        - index_dow_jones (str): Status of Dow Jones indices trading hours
+        - index_ftse_russell (str): Status of FTSE Russell indices trading hours
+        - index_msci (str): Status of MSCI indices trading hours
+        - index_mstar (str): Status of Morningstar indices trading hours
+        - index_mstarc (str): Status of Morningstar Customer indices trading hours
+        - index_nasdaq (str): Status of Nasdaq indices trading hours
+        - index_s_and_p (str): Status of S&P indices trading hours
+        - index_societe_generale (str): Status of Societe Generale indices trading hours
+
+    Use Cases:
+        - **Real-Time Monitoring**: Check if markets are currently open for trading
+        - **Algorithm Scheduling**: Determine when to run trading algorithms based on market hours
+        - **UI Updates**: Display current market status to users in trading applications
+        - **Operational Planning**: Schedule system maintenance during market closures
+        - **Trading Strategy**: Adjust crypto trading strategies based on traditional market hours
+        - **Order Validation**: Prevent order submission when target markets are closed
+        - **Risk Management**: Understand when gaps may occur due to market closures
+        - **Crypto vs Traditional Markets**: Coordinate crypto trading with traditional market status
+        - **International Trading**: Track multiple exchange statuses for global trading operations
+        - **Market Hours Analysis**: Analyze patterns of market openings and closings
+
+    Important Notes:
+        - This endpoint returns a single snapshot of the current status (one row)
+        - Status changes throughout the trading day (pre-market → open → after-hours → closed)
+        - **Crypto markets trade 24/7** - crypto_status is typically always "open"
+        - Traditional stock markets (NYSE, NASDAQ) have specific hours (typically 9:30 AM - 4:00 PM ET)
+        - Extended hours trading occurs before and after regular market hours
+        - Use server_time as the authoritative timestamp (not fetched_at)
+        - Call this endpoint regularly to monitor real-time market status changes
+        - Combine with polygon_market_holidays to understand upcoming closures
+
+    Trading Strategy Considerations:
+        - **Crypto Trading**: Crypto markets are open 24/7, but liquidity/volatility varies when traditional markets close
+        - **Volatility**: Markets often experience higher volatility at open and close
+        - **Liquidity**: Extended hours typically have lower volume and wider spreads
+        - **Gap Risk**: Markets closed overnight can create price gaps at next open
+        - **Coordination**: Some crypto traders adjust strategies based on traditional market hours
+
+    Example Workflow:
+        1. Call this tool to fetch current market status
+        2. Receive CSV filename in response
+        3. Use py_eval to load and analyze the CSV file
+        4. Check specific market statuses (crypto_status, nyse_status, etc.)
+        5. Make trading decisions based on which markets are currently active
+        6. Integrate into automated systems for real-time market monitoring
+
+    Integration with Other Tools:
+        - Use with polygon_market_holidays to plan around upcoming closures
+        - Combine with polygon_crypto_aggregates for 24/7 crypto market analysis
+        - Coordinate with polygon_news to understand market-moving events
+        - Use with trading algorithms to ensure orders are placed during market hours
+
+    Always use py_eval tool to analyze the saved CSV file for market status checks and trading decisions.
+    """
+    logger.info("polygon_market_status invoked")
+
+    try:
+        # Fetch market status
+        df = fetch_market_status(output_dir=None)
+
+        if df.empty:
+            return "No market status data was retrieved. The endpoint may be temporarily unavailable."
+
+        # Always save to CSV file
+        filename = f"market_status_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved market status to {filename}")
+
+        # Return formatted response
+        return _format_csv_response(filepath, df)
+
+    except Exception as e:
+        logger.error(f"Error in polygon_market_status: {e}")
+        return f"Error fetching market status: {str(e)}"
 
 
 @mcp.resource(
