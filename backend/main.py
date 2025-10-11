@@ -22,6 +22,7 @@ from polygon_data_fetcher import (
     fetch_crypto_exchanges,
     fetch_crypto_grouped_daily_bars,
     fetch_crypto_last_trade,
+    fetch_market_holidays,
     calculate_price_metrics,
     create_combined_analysis,
     create_output_folder
@@ -1400,6 +1401,103 @@ def polygon_crypto_last_trade(
     except Exception as e:
         logger.error(f"Error in polygon_crypto_last_trade: {e}")
         return f"Error fetching crypto last trade: {str(e)}"
+
+
+@mcp.tool()
+def polygon_market_holidays() -> str:
+    """
+    Fetch upcoming market holidays and their corresponding open/close times, and save to CSV file.
+
+    This endpoint retrieves forward-looking market holiday information across all exchanges.
+    Use this data to plan ahead for trading activities, system maintenance, operational planning,
+    and notifying users about upcoming market closures or early closes.
+
+    Parameters:
+        None (endpoint automatically returns upcoming holidays)
+
+    Returns:
+        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
+
+    CSV Output Structure:
+        - date (str): Holiday date in 'YYYY-MM-DD' format
+            Example: "2024-11-28" (Thanksgiving)
+        - exchange (str): Exchange identifier affected by this holiday
+            Examples: "NYSE" (New York Stock Exchange), "NASDAQ", "OTC" (Over-The-Counter)
+            Note: Same holiday may appear multiple times for different exchanges
+        - name (str): Holiday name
+            Examples: "Thanksgiving", "Christmas Day", "New Year's Day", "Independence Day"
+        - status (str): Market status for this day
+            Values:
+            * "closed": Market is completely closed for the entire day
+            * "early-close": Market closes earlier than usual
+        - open (str): Opening time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS.sssZ)
+            Only present for "early-close" days when market opens normally
+            Example: "2024-11-29T14:30:00.000Z" (9:30 AM EST)
+            Note: null/empty for "closed" status days
+        - close (str): Closing time in ISO 8601 format (YYYY-MM-DDTHH:MM:SS.sssZ)
+            Present for "early-close" days showing the early closing time
+            Example: "2024-11-29T18:00:00.000Z" (1:00 PM EST)
+            Note: null/empty for "closed" status days
+
+    Use Cases:
+        - **Trading Schedule Adjustments**: Plan trading strategies around market closures
+        - **System Maintenance**: Schedule system updates during market holidays
+        - **Operational Planning**: Adjust staffing and operations for holiday schedules
+        - **User Notifications**: Alert users about upcoming market closures and early closes
+        - **Algorithm Scheduling**: Pause or adjust automated trading during holidays
+        - **Calendar Integration**: Build integrated holiday calendars for trading platforms
+        - **Risk Management**: Anticipate reduced liquidity before/after holidays
+        - **Order Management**: Avoid placing orders that won't execute during closures
+        - **Portfolio Rebalancing**: Plan rebalancing activities around market availability
+        - **Crypto Trading**: Understand when traditional markets are closed (crypto trades 24/7)
+
+    Important Notes:
+        - This endpoint is **forward-looking only** - shows future holidays, not historical
+        - Same holiday date may appear multiple times (once per exchange)
+        - Crypto markets trade 24/7 but this data helps coordinate with traditional markets
+        - Early-close days have reduced trading hours (check open/close times)
+        - Times are typically in UTC/ISO format - convert to your local timezone as needed
+        - Data covers major U.S. exchanges (NYSE, NASDAQ, OTC)
+        - Plan ahead: Use this to anticipate market gaps in your trading strategies
+
+    Trading Strategy Considerations:
+        - Markets often have reduced volume and volatility before holidays
+        - Gap risk increases over extended closures (e.g., 3-day weekends)
+        - Early-close days may have compressed trading activity
+        - Consider closing risky positions before extended holiday closures
+        - Crypto markets continue during traditional market holidays
+
+    Example Workflow:
+        1. Call this tool to fetch upcoming market holidays
+        2. Receive CSV filename in response
+        3. Use py_eval to load and analyze the CSV file
+        4. Filter by specific exchanges or date ranges
+        5. Identify next closure date for scheduling purposes
+        6. Alert systems or adjust trading algorithms accordingly
+
+    Always use py_eval tool to analyze the saved CSV file for comprehensive holiday planning.
+    """
+    logger.info("polygon_market_holidays invoked")
+
+    try:
+        # Fetch market holidays
+        df = fetch_market_holidays(output_dir=None)
+
+        if df.empty:
+            return "No upcoming market holidays were retrieved. The endpoint may be temporarily unavailable or there are no upcoming holidays in the system."
+
+        # Always save to CSV file
+        filename = f"market_holidays_{uuid.uuid4().hex[:8]}.csv"
+        filepath = CSV_DIR / filename
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved market holidays to {filename} ({len(df)} records)")
+
+        # Return formatted response
+        return _format_csv_response(filepath, df)
+
+    except Exception as e:
+        logger.error(f"Error in polygon_market_holidays: {e}")
+        return f"Error fetching market holidays: {str(e)}"
 
 
 @mcp.resource(

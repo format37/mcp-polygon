@@ -756,6 +756,71 @@ def fetch_crypto_last_trade(from_symbol: str,
         return pd.DataFrame()
 
 
+def fetch_market_holidays(output_dir: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Fetch upcoming market holidays from Polygon.io.
+
+    This endpoint retrieves forward-looking market holidays and their corresponding
+    open/close times. Use this data to plan ahead for trading activities, system
+    operations, and schedule adjustments.
+
+    Args:
+        output_dir: Optional output directory to save CSV file
+
+    Returns:
+        DataFrame with upcoming market holidays including dates, exchanges, and status
+
+    Note:
+        This endpoint is forward-looking only, listing future holidays that affect
+        market hours. Data applies to all asset classes (stocks, crypto, forex, etc.).
+    """
+    logger.info("Fetching upcoming market holidays")
+
+    records = []
+    try:
+        # Fetch market holidays
+        holidays = client.get_market_holidays()
+
+        for holiday in holidays:
+            # Extract basic holiday information
+            record = {
+                'date': getattr(holiday, 'date', None),
+                'exchange': getattr(holiday, 'exchange', None),
+                'name': getattr(holiday, 'name', None),
+                'status': getattr(holiday, 'status', None),
+            }
+
+            # Handle optional open/close times (for early-close days)
+            # These are typically ISO 8601 datetime strings
+            open_time = getattr(holiday, 'open', None)
+            close_time = getattr(holiday, 'close', None)
+
+            record['open'] = open_time if open_time else None
+            record['close'] = close_time if close_time else None
+
+            records.append(record)
+
+    except Exception as e:
+        logger.error(f"Error fetching market holidays: {e}")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+
+    # Convert date column to proper date format if present
+    if not df.empty and 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+
+    logger.info(f"Successfully fetched {len(df)} upcoming market holidays")
+
+    # Save to CSV if output directory is provided
+    if output_dir and not df.empty:
+        csv_file = output_dir / "market_holidays.csv"
+        df.to_csv(csv_file, index=False)
+        logger.info(f"Saved market holidays to {csv_file}")
+
+    return df
+
+
 def calculate_price_metrics(price_df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate price-based metrics for each ticker.
