@@ -316,6 +316,133 @@ def fetch_crypto_aggregates(ticker: str,
     return df
 
 
+def fetch_crypto_conditions(data_type: Optional[str] = None,
+                           condition_id: Optional[int] = None,
+                           sip: Optional[str] = None,
+                           limit: int = 100,
+                           sort: Optional[str] = None,
+                           order: Optional[str] = None,
+                           output_dir: Optional[Path] = None) -> pd.DataFrame:
+    """
+    Fetch crypto condition codes from Polygon.io.
+
+    Condition codes explain special circumstances associated with crypto trades and quotes,
+    such as trades occurring outside regular sessions or at averaged prices.
+
+    Args:
+        data_type: Filter by data type (e.g., "trade", "quote")
+        condition_id: Filter for a specific condition ID
+        sip: Filter by SIP (Systematic Internalization Provider)
+        limit: Maximum number of results (default: 100, max: 1000)
+        sort: Field to sort by (e.g., "id", "name")
+        order: Sort order - "asc" or "desc"
+        output_dir: Optional output directory to save CSV file
+
+    Returns:
+        DataFrame with crypto condition codes and their details
+
+    Note:
+        This is reference/metadata data that helps interpret crypto trading data.
+        Use these conditions to understand trade flags and filter data appropriately.
+    """
+    import json
+
+    logger.info(f"Fetching crypto conditions (limit={limit})")
+
+    records = []
+    try:
+        # Build kwargs for the API call
+        kwargs = {
+            'asset_class': 'crypto',
+            'limit': min(limit, 1000)  # Enforce max limit
+        }
+
+        if data_type:
+            kwargs['data_type'] = data_type
+        if condition_id is not None:
+            kwargs['id'] = condition_id
+        if sip:
+            kwargs['sip'] = sip
+        if sort:
+            kwargs['sort'] = sort
+        if order:
+            kwargs['order'] = order
+
+        # Fetch conditions from Polygon API
+        conditions = client.list_conditions(**kwargs)
+
+        for condition in conditions:
+            # Extract basic fields
+            record = {
+                'id': getattr(condition, 'id', None),
+                'name': getattr(condition, 'name', None),
+                'abbreviation': getattr(condition, 'abbreviation', None),
+                'asset_class': getattr(condition, 'asset_class', None),
+                'description': getattr(condition, 'description', None),
+                'type': getattr(condition, 'type', None),
+                'legacy': getattr(condition, 'legacy', None),
+                'exchange': getattr(condition, 'exchange', None),
+            }
+
+            # Handle array field - data_types
+            data_types = getattr(condition, 'data_types', None)
+            if data_types:
+                record['data_types'] = json.dumps(data_types) if isinstance(data_types, list) else str(data_types)
+            else:
+                record['data_types'] = None
+
+            # Handle complex object fields - convert to JSON strings
+            sip_mapping = getattr(condition, 'sip_mapping', None)
+            if sip_mapping:
+                try:
+                    # Convert to dict if it's an object, then to JSON
+                    if hasattr(sip_mapping, '__dict__'):
+                        record['sip_mapping'] = json.dumps(sip_mapping.__dict__)
+                    elif isinstance(sip_mapping, dict):
+                        record['sip_mapping'] = json.dumps(sip_mapping)
+                    else:
+                        record['sip_mapping'] = str(sip_mapping)
+                except Exception as e:
+                    logger.warning(f"Could not serialize sip_mapping: {e}")
+                    record['sip_mapping'] = str(sip_mapping)
+            else:
+                record['sip_mapping'] = None
+
+            update_rules = getattr(condition, 'update_rules', None)
+            if update_rules:
+                try:
+                    # Convert to dict if it's an object, then to JSON
+                    if hasattr(update_rules, '__dict__'):
+                        record['update_rules'] = json.dumps(update_rules.__dict__)
+                    elif isinstance(update_rules, dict):
+                        record['update_rules'] = json.dumps(update_rules)
+                    else:
+                        record['update_rules'] = str(update_rules)
+                except Exception as e:
+                    logger.warning(f"Could not serialize update_rules: {e}")
+                    record['update_rules'] = str(update_rules)
+            else:
+                record['update_rules'] = None
+
+            records.append(record)
+
+    except Exception as e:
+        logger.error(f"Error fetching crypto conditions: {e}")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+
+    logger.info(f"Successfully fetched {len(df)} crypto conditions")
+
+    # Save to CSV if output directory is provided
+    if output_dir and not df.empty:
+        csv_file = output_dir / "crypto_conditions.csv"
+        df.to_csv(csv_file, index=False)
+        logger.info(f"Saved crypto conditions to {csv_file}")
+
+    return df
+
+
 def calculate_price_metrics(price_df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate price-based metrics for each ticker.
