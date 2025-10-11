@@ -269,7 +269,7 @@ def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int
         start_date (optional): Start date in YYYY-MM-DD format
         end_date (optional): End date in YYYY-MM-DD format
         limit (optional): Maximum number of results to fetch. Default is 1000.
-        ticker (optional): Specific ticker symbol to fetch news for
+        ticker (optional): Specific stock market ticker symbol to fetch news for (e.g., 'AAPL', 'MSFT')
 
     Returns:
         List of news articles with published_utc and description/title fields
