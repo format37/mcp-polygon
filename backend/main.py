@@ -13,7 +13,6 @@ from starlette.routing import Route
 from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
 from polygon_data_fetcher import (
-    fetch_ticker_details,
     fetch_price_data,
     fetch_crypto_aggregates,
     fetch_crypto_conditions,
@@ -30,7 +29,12 @@ from polygon_data_fetcher import (
     create_output_folder
 )
 from polygon import RESTClient
-from polygon_tools.news import register_polygon_news
+from polygon_tools.news import (
+    register_polygon_news
+)
+from polygon_tools.ticker_details import (
+    register_polygon_ticker_details
+)
 from mcp_service import format_csv_response
 
 # Python execution imports
@@ -113,6 +117,7 @@ CSV_DIR.mkdir(parents=True, exist_ok=True)
 
 # Polygon MCP tools
 register_polygon_news(mcp, polygon_client, CSV_DIR)
+register_polygon_ticker_details(mcp, polygon_client, CSV_DIR)
 
 def _posix_time_limit(seconds: float):
     """POSIX-only wall clock timeout using signals; noop elsewhere."""
@@ -203,74 +208,6 @@ def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
 
     logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
     return result
-
-@mcp.tool()
-def polygon_ticker_details(
-    tickers: List[str]
-) -> str:
-    """
-    Fetch comprehensive ticker details and save to CSV file.
-
-    Parameters:
-        tickers (List[str]): List of ticker symbols (e.g., ['AAPL', 'MSFT'])
-
-    Returns:
-        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
-
-    CSV Output Structure:
-        - ticker (str): Stock ticker symbol
-        - name (str): Company full name
-        - market_cap (float): Market capitalization in USD
-        - share_class_shares_outstanding (float): Number of shares outstanding for this share class
-        - weighted_shares_outstanding (float): Weighted average shares outstanding
-        - primary_exchange (str): Primary stock exchange code (e.g., 'XNAS' for NASDAQ)
-        - type (str): Security type (e.g., 'CS' for Common Stock)
-        - active (bool): Whether the ticker is actively traded
-        - currency_name (str): Currency denomination (e.g., 'usd')
-        - cik (str): SEC Central Index Key
-        - composite_figi (str): Financial Instrument Global Identifier
-        - share_class_figi (str): Share class specific FIGI
-        - locale (str): Market locale (e.g., 'us')
-        - description (str): Detailed company description
-        - homepage_url (str): Company website URL
-        - total_employees (int): Number of employees
-        - list_date (str): IPO/listing date in YYYY-MM-DD format
-        - logo_url (str): URL to company logo image
-        - icon_url (str): URL to company icon image
-        - sic_code (int): Standard Industrial Classification code
-        - sic_description (str): SIC code description
-        - ticker_root (str): Root ticker symbol
-        - phone_number (str): Company phone number
-        - address_1 (str): Primary address
-        - city (str): Company headquarters city
-        - state (str): Company headquarters state
-        - postal_code (str): ZIP/postal code
-
-    Use this data for: Company research, fundamental analysis, market cap screening, sector analysis.
-    Always use py_eval tool to analyze the saved CSV file.
-    """
-    logger.info(f"polygon_ticker_details invoked with {len(tickers)} tickers")
-
-    try:
-        # Fetch ticker details (no output_dir, we'll save separately)
-        df = fetch_ticker_details(tickers, output_dir=None)
-
-        if df.empty:
-            return "No ticker details were retrieved"
-
-        # Always save to CSV file
-        filename = f"ticker_details_{uuid.uuid4().hex[:8]}.csv"
-        filepath = CSV_DIR / filename
-        df.to_csv(filepath, index=False)
-        logger.info(f"Saved ticker details to {filename} ({len(df)} records)")
-
-        # Return formatted response
-        return format_csv_response(filepath, df)
-
-    except Exception as e:
-        logger.error(f"Error in polygon_ticker_details: {e}")
-        return f"Error fetching ticker details: {str(e)}"
-
 
 @mcp.tool()
 def polygon_price_data(

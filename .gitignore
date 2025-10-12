@@ -1,6 +1,7 @@
 .env.production
 .env.local
 prompt.md
+prompt_b.md
 csv/
 backend/__pycache__/
 examples/

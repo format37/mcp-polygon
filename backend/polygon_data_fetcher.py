@@ -17,6 +17,7 @@ from typing import List, Optional
 import logging
 import time
 from pathlib import Path
+from polygon_tools.ticker_details import fetch_ticker_details
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -51,104 +52,6 @@ def create_output_folder(base_name: str = "polygon_output") -> Path:
     output_dir.mkdir(exist_ok=True)
     logger.info(f"Created output directory: {output_dir}")
     return output_dir
-
-
-def fetch_ticker_details(tickers: List[str], output_dir: Optional[Path] = None) -> pd.DataFrame:
-    """
-    Fetch comprehensive ticker details including company info, market cap, sector, etc.
-
-    Args:
-        tickers: List of ticker symbols (e.g., ['AAPL', 'MSFT'])
-        output_dir: Optional output directory to save CSV file
-
-    Returns:
-        DataFrame with ticker details
-    """
-    logger.info(f"Fetching ticker details for {len(tickers)} tickers")
-
-    records = []
-    for i, ticker in enumerate(tickers):
-        try:
-            logger.info(f"Processing {i+1}/{len(tickers)}: {ticker}")
-
-            # Get ticker details
-            details = client.get_ticker_details(ticker)
-
-            record = {
-                'ticker': ticker,
-                'name': getattr(details, 'name', None),
-                'market_cap': getattr(details, 'market_cap', None),
-                'share_class_shares_outstanding': getattr(details, 'share_class_shares_outstanding', None),
-                'weighted_shares_outstanding': getattr(details, 'weighted_shares_outstanding', None),
-                'primary_exchange': getattr(details, 'primary_exchange', None),
-                'type': getattr(details, 'type', None),
-                'active': getattr(details, 'active', None),
-                'currency_name': getattr(details, 'currency_name', None),
-                'cik': getattr(details, 'cik', None),
-                'composite_figi': getattr(details, 'composite_figi', None),
-                'share_class_figi': getattr(details, 'share_class_figi', None),
-                'locale': getattr(details, 'locale', None),
-                'description': getattr(details, 'description', None),
-                'homepage_url': getattr(details, 'homepage_url', None),
-                'total_employees': getattr(details, 'total_employees', None),
-                'list_date': getattr(details, 'list_date', None),
-                'logo_url': getattr(details, 'logo_url', None),
-                'icon_url': getattr(details, 'icon_url', None),
-                'sic_code': getattr(details, 'sic_code', None),
-                'sic_description': getattr(details, 'sic_description', None),
-                'ticker_root': getattr(details, 'ticker_root', None),
-                'phone_number': getattr(details, 'phone_number', None),
-            }
-
-            # Add address information if available
-            address = getattr(details, 'address', None)
-            if address:
-                record['address_1'] = getattr(address, 'address1', None)
-                record['city'] = getattr(address, 'city', None)
-                record['state'] = getattr(address, 'state', None)
-                record['postal_code'] = getattr(address, 'postal_code', None)
-            else:
-                record['address_1'] = None
-                record['city'] = None
-                record['state'] = None
-                record['postal_code'] = None
-
-            # Add branding information if available
-            branding = getattr(details, 'branding', None)
-            if branding:
-                record['logo_url'] = getattr(branding, 'logo_url', record['logo_url'])
-                record['icon_url'] = getattr(branding, 'icon_url', record['icon_url'])
-
-            records.append(record)
-
-            # Rate limiting - be respectful
-            time.sleep(0.1)
-
-        except Exception as e:
-            logger.error(f"Error fetching details for {ticker}: {e}")
-            # Add a record with minimal info so we don't lose the ticker
-            records.append({
-                'ticker': ticker,
-                'name': None,
-                'market_cap': None,
-                'error': str(e)
-            })
-
-    df = pd.DataFrame(records)
-
-    # Convert date columns
-    if not df.empty and 'list_date' in df.columns:
-        df['list_date'] = pd.to_datetime(df['list_date'], errors='coerce')
-
-    logger.info(f"Successfully fetched details for {len(df)} tickers")
-
-    # Save to CSV if output directory is provided
-    if output_dir and not df.empty:
-        csv_file = output_dir / "ticker_details.csv"
-        df.to_csv(csv_file, index=False)
-        logger.info(f"Saved ticker details to {csv_file}")
-
-    return df
 
 
 def fetch_price_data(tickers: List[str],
@@ -1221,7 +1124,7 @@ def create_combined_analysis(tickers: List[str],
     logger.info("Creating combined analysis")
 
     # Fetch data from both endpoints
-    details_df = fetch_ticker_details(tickers, output_dir)
+    details_df = fetch_ticker_details(client, tickers, output_dir)
     price_df = fetch_price_data(tickers, from_date, to_date, output_dir=output_dir)
 
     # Calculate price metrics
