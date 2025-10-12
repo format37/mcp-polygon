@@ -196,7 +196,10 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
         # Generate filename
         filename = f"news_{ticker}_{str(uuid.uuid4())[:8]}.csv" if ticker else f"news_general_{str(uuid.uuid4())[:8]}.csv"
         filepath = csv_dir / filename
-        logger.info(f"df len={len(df)}. Saving news data to {csv_dir} # {filename}")
-        logger.info(f"filepath: {filepath}")
+
+        # Save to CSV file
+        df.to_csv(filepath, index=False)
+        logger.info(f"Saved news data to {filename} ({len(df)} records)")
+
         # Return formatted response
         return format_csv_response(filepath, df)
