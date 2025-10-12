@@ -13,7 +13,6 @@ from starlette.routing import Route
 from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
 from polygon_data_fetcher import (
-    fetch_price_data,
     fetch_crypto_aggregates,
     fetch_crypto_conditions,
     fetch_crypto_daily_open_close,
@@ -23,19 +22,13 @@ from polygon_data_fetcher import (
     fetch_crypto_snapshots,
     fetch_crypto_last_trade,
     fetch_market_holidays,
-    fetch_market_status,
-    calculate_price_metrics,
-    create_combined_analysis,
-    create_output_folder
-)
-from polygon import RESTClient
-from polygon_tools.news import (
-    register_polygon_news
-)
-from polygon_tools.ticker_details import (
-    register_polygon_ticker_details
+    fetch_market_status
 )
 from mcp_service import format_csv_response
+from polygon import RESTClient
+from polygon_tools.news import register_polygon_news
+from polygon_tools.ticker_details import register_polygon_ticker_details
+from polygon_tools.price_data import register_polygon_price_data
 
 # Python execution imports
 import io
@@ -118,6 +111,7 @@ CSV_DIR.mkdir(parents=True, exist_ok=True)
 # Polygon MCP tools
 register_polygon_news(mcp, polygon_client, CSV_DIR)
 register_polygon_ticker_details(mcp, polygon_client, CSV_DIR)
+register_polygon_price_data(mcp, polygon_client, CSV_DIR)
 
 def _posix_time_limit(seconds: float):
     """POSIX-only wall clock timeout using signals; noop elsewhere."""
@@ -208,148 +202,6 @@ def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
 
     logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
     return result
-
-@mcp.tool()
-def polygon_price_data(
-    tickers: List[str],
-    from_date: str = "",
-    to_date: str = "",
-    timespan: str = "day",
-    multiplier: int = 1
-) -> str:
-    """
-    Fetch historical price data and save to CSV file.
-
-    Parameters:
-        tickers (List[str]): List of ticker symbols
-        from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
-        to_date (str): End date in YYYY-MM-DD format (defaults to today)
-        timespan (str): Time span (day, week, month, quarter, year)
-        multiplier (int): Size of the time window
-
-    Returns:
-        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
-
-    CSV Output Structure:
-        - ticker (str): Stock ticker symbol
-        - timestamp (str): Trading session timestamp in 'YYYY-MM-DD HH:MM:SS' format
-        - open (float): Opening price for the period
-        - high (float): Highest price during the period
-        - low (float): Lowest price during the period
-        - close (float): Closing price for the period
-        - volume (float): Total trading volume for the period
-        - vwap (float): Volume Weighted Average Price
-        - transactions (int): Number of transactions during the period
-        - date (str): Trading date in 'YYYY-MM-DD' format
-
-    Use this data for: Technical analysis, price trend analysis, volume analysis, OHLC charting, volatility calculations.
-    Always use py_eval tool to analyze the saved CSV file.
-    """
-    logger.info(f"polygon_price_data invoked with {len(tickers)} tickers, dates {from_date} to {to_date}")
-
-    try:
-        # Set default dates if not provided
-        from_date_param = from_date if from_date else None
-        to_date_param = to_date if to_date else None
-
-        # Fetch price data (no output_dir, we'll save separately)
-        df = fetch_price_data(
-            tickers=tickers,
-            from_date=from_date_param,
-            to_date=to_date_param,
-            timespan=timespan,
-            multiplier=multiplier,
-            output_dir=None
-        )
-
-        if df.empty:
-            return "No price data were retrieved"
-
-        # Always save to CSV file
-        filename = f"price_data_{uuid.uuid4().hex[:8]}.csv"
-        filepath = CSV_DIR / filename
-        df.to_csv(filepath, index=False)
-        logger.info(f"Saved price data to {filename} ({len(df)} records)")
-
-        # Return formatted response
-        return format_csv_response(filepath, df)
-
-    except Exception as e:
-        logger.error(f"Error in polygon_price_data: {e}")
-        return f"Error fetching price data: {str(e)}"
-
-
-@mcp.tool()
-def polygon_price_metrics(
-    tickers: List[str],
-    from_date: str = "",
-    to_date: str = ""
-) -> str:
-    """
-    Calculate price-based metrics and save to CSV file.
-
-    Parameters:
-        tickers (List[str]): List of ticker symbols
-        from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
-        to_date (str): End date in YYYY-MM-DD format (defaults to today)
-
-    Returns:
-        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
-
-    CSV Output Structure:
-        - ticker (str): Stock ticker symbol
-        - start_date (str): Analysis period start date in 'YYYY-MM-DD' format
-        - end_date (str): Analysis period end date in 'YYYY-MM-DD' format
-        - trading_days (int): Number of trading days in the period
-        - start_price (float): Opening price on start date
-        - end_price (float): Closing price on end date
-        - high_price (float): Highest price during the period
-        - low_price (float): Lowest price during the period
-        - total_return (float): Total return as decimal (e.g., 0.12 = 12% gain)
-        - volatility (float): Price volatility (standard deviation of daily returns)
-        - avg_daily_volume (float): Average daily trading volume
-        - total_volume (float): Total volume traded during period
-        - price_range_ratio (float): (High - Low) / Low ratio indicating price range
-
-    Use this data for: Risk analysis, performance comparison, volatility assessment, return calculations, portfolio optimization.
-    Always use py_eval tool to analyze the saved CSV file.
-    """
-    logger.info(f"polygon_price_metrics invoked with {len(tickers)} tickers")
-
-    try:
-        # Set default dates if not provided
-        from_date_param = from_date if from_date else None
-        to_date_param = to_date if to_date else None
-
-        # First fetch price data
-        price_df = fetch_price_data(
-            tickers=tickers,
-            from_date=from_date_param,
-            to_date=to_date_param
-        )
-
-        if price_df.empty:
-            return "No price data available for metrics calculation"
-
-        # Calculate metrics
-        metrics_df = calculate_price_metrics(price_df)
-
-        if metrics_df.empty:
-            return "No metrics could be calculated"
-
-        # Always save to CSV file
-        filename = f"price_metrics_{uuid.uuid4().hex[:8]}.csv"
-        filepath = CSV_DIR / filename
-        metrics_df.to_csv(filepath, index=False)
-        logger.info(f"Saved price metrics to {filename} ({len(metrics_df)} records)")
-
-        # Return formatted response
-        return format_csv_response(filepath, metrics_df)
-
-    except Exception as e:
-        logger.error(f"Error in polygon_price_metrics: {e}")
-        return f"Error calculating price metrics: {str(e)}"
-
 
 @mcp.tool()
 def polygon_crypto_aggregates(
