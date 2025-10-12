@@ -23,6 +23,7 @@ services:
       - MCP_PUBLIC_BASE_URL=${MCP_PUBLIC_BASE_URL}
       - POLYGON_API_KEY=${POLYGON_API_KEY}
       - SENTRY_DSN=${SENTRY_DSN}
+      - CSV_DIR=data/mcp-polygon
     expose:
       - "8006"
     restart: unless-stopped

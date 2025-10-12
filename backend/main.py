@@ -3,7 +3,6 @@ import contextvars
 import logging
 import os
 import re
-from datetime import datetime, timedelta
 from typing import Any, Optional, List, Dict
 import sentry_sdk
 import uvicorn
@@ -31,6 +30,8 @@ from polygon_data_fetcher import (
     create_output_folder
 )
 from polygon import RESTClient
+from polygon_tools.news import register_polygon_news
+from mcp_service import format_csv_response
 
 # Python execution imports
 import io
@@ -89,10 +90,13 @@ def _sanitize_filename(name: str) -> str:
 # Polygon API configuration
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
 
+# Global MCP instance - will be initialized
+# mcp_instance = None
 # Initialize Polygon client if API key is available
 polygon_client = None
 if POLYGON_API_KEY:
     try:
+        logger.info(f"POLYGON_API_KEY: {POLYGON_API_KEY[:5]}... (truncated for security)")
         polygon_client = RESTClient(POLYGON_API_KEY)
         logger.info("Polygon RESTClient initialized successfully")
     except Exception as e:
@@ -104,137 +108,11 @@ else:
 mcp = FastMCP(_safe_name, streamable_http_path=STREAM_PATH, json_response=True)
 
 # CSV storage directory
-CSV_DIR = pathlib.Path("data/mcp-polygon")
+CSV_DIR = pathlib.Path(os.environ.get('CSV_DIR')).resolve()
 CSV_DIR.mkdir(parents=True, exist_ok=True)
 
-def _format_csv_response(filepath: pathlib.Path, df: Any) -> str:
-    """
-    Generate standardized response format for CSV data files.
-
-    Args:
-        filepath: Path to the saved CSV file
-        df: DataFrame that was saved
-
-    Returns:
-        Formatted string with file info, schema, sample data, and Python snippet
-    """
-    import json
-    import pandas as pd
-
-    # Get file size
-    file_size_bytes = filepath.stat().st_size
-    if file_size_bytes < 1024:
-        size_str = f"{file_size_bytes} bytes"
-    elif file_size_bytes < 1024 * 1024:
-        size_str = f"{file_size_bytes / 1024:.1f} KB"
-    else:
-        size_str = f"{file_size_bytes / (1024 * 1024):.1f} MB"
-
-    # Get filename only (relative to CSV_PATH)
-    filename = filepath.name
-
-    # Infer better data types for schema
-    def infer_better_type(series):
-        """Infer a more descriptive data type for a pandas Series."""
-        # Remove nulls for analysis
-        non_null = series.dropna()
-
-        if len(non_null) == 0:
-            return "string (empty)"
-
-        # Check current dtype first
-        dtype_str = str(series.dtype)
-
-        # If already a good type, keep it
-        if 'int' in dtype_str:
-            return dtype_str
-        if 'float' in dtype_str:
-            return dtype_str
-        if 'bool' in dtype_str:
-            return 'boolean'
-        if 'datetime' in dtype_str:
-            return 'datetime'
-
-        # Try to infer better types for 'object' columns
-        if dtype_str == 'object':
-            # Try boolean
-            if non_null.isin([0, 1, '0', '1', True, False, 'True', 'False', 'true', 'false']).all():
-                return 'boolean'
-
-            # Try integer
-            try:
-                converted = pd.to_numeric(non_null, errors='raise')
-                if (converted == converted.astype(int)).all():
-                    return 'integer'
-            except (ValueError, TypeError):
-                pass
-
-            # Try float
-            try:
-                pd.to_numeric(non_null, errors='raise')
-                return 'float'
-            except (ValueError, TypeError):
-                pass
-
-            # Try datetime
-            try:
-                pd.to_datetime(non_null, errors='raise')
-                return 'datetime'
-            except (ValueError, TypeError):
-                pass
-
-            return 'string'
-
-        return dtype_str
-
-    # Build schema JSON with inferred types
-    schema = {col: infer_better_type(df[col]) for col in df.columns}
-    schema_json = json.dumps(schema, indent=2)
-
-    # Generate sample data (first row) as markdown table
-    if len(df) > 0:
-        sample_df = df.head(1)
-        # Create markdown table manually for better control
-        headers = list(sample_df.columns)
-        values = [str(v) for v in sample_df.iloc[0].values]
-
-        # Truncate long values for display
-        values = [v[:50] + "..." if len(v) > 50 else v for v in values]
-
-        # Build markdown table
-        header_row = "| " + " | ".join(headers) + " |"
-        separator = "|" + "|".join(["-" * (len(h) + 2) for h in headers]) + "|"
-        value_row = "| " + " | ".join(values) + " |"
-
-        sample_table = f"{header_row}\n{separator}\n{value_row}"
-    else:
-        sample_table = "(empty dataset)"
-
-    # Create Python snippet
-    python_snippet = f"""import pandas as pd
-df = pd.read_csv('data/mcp-polygon/{filename}')
-print(df.info())
-print(df.head())"""
-
-    # Build final response
-    response = f"""✓ Data saved to CSV
-
-File: {filename}
-Rows: {len(df)}
-Size: {size_str}
-
-Schema (JSON):
-{schema_json}
-
-Sample (first row):
-{sample_table}
-
-Python snippet to load:
-```python
-{python_snippet}
-```"""
-
-    return response
+# Polygon MCP tools
+register_polygon_news(mcp, polygon_client, CSV_DIR)
 
 def _posix_time_limit(seconds: float):
     """POSIX-only wall clock timeout using signals; noop elsewhere."""
@@ -266,97 +144,6 @@ class StreamErrorFilter(logging.Filter):
         return True
 
 original_logger.addFilter(StreamErrorFilter())
-
-
-def fetch_polygon_news_data(start_date: str = "", end_date: str = "", limit: int = 1000, ticker: str = "") -> list:
-    """
-    Fetch news data from Polygon.io API using RESTClient.
-
-    Args:
-        start_date (optional): Start date in YYYY-MM-DD format
-        end_date (optional): End date in YYYY-MM-DD format
-        limit (optional): Maximum number of results to fetch. Default is 1000.
-        ticker (optional): Specific stock market ticker symbol to fetch news for (e.g., 'AAPL', 'MSFT')
-
-    Returns:
-        List of news articles with published_utc and description/title fields
-    """
-    if not polygon_client:
-        logger.warning("Polygon client not available, returning empty news list")
-        return []
-
-    try:
-        # Set default dates if not provided
-        if not end_date:
-            end_date = datetime.now().strftime('%Y-%m-%d')
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-
-        logger.info(f"Fetching news from {start_date} to {end_date}" + (f" for ticker {ticker}" if ticker else " (general market news)"))
-
-        # Use the news endpoint to fetch articles
-        news_articles = []
-
-        # Fetch news for the date range
-        try:
-            news_data = polygon_client.list_ticker_news(
-                ticker=ticker if ticker else None,  # Use specific ticker or None for general market news
-                published_utc_gte=start_date,
-                published_utc_lte=end_date,
-                order="desc",
-                limit=limit,
-                sort="published_utc"
-            )
-
-            for article in news_data:
-                news_articles.append({
-                    'published_utc': article.published_utc,
-                    'title': getattr(article, 'title', ''),
-                    'description': getattr(article, 'description', ''),
-                    'author': getattr(article, 'author', ''),
-                    'article_url': getattr(article, 'article_url', ''),
-                    'tickers': getattr(article, 'tickers', [])
-                })
-
-        except Exception as e:
-            logger.warning(f"Error with ticker news endpoint, trying general news: {e}")
-            # Fallback to general news endpoint if ticker news fails
-            try:
-                # Use a more general approach
-                news_iter = polygon_client.list_ticker_news(limit=limit, order="desc", sort="published_utc")
-                count = 0
-                for article in news_iter:
-                    if count >= limit:
-                        break
-
-                    # Filter by date range if articles have published_utc
-                    article_date = getattr(article, 'published_utc', '')
-                    if article_date:
-                        article_datetime = datetime.fromisoformat(article_date.replace('Z', '+00:00'))
-                        start_datetime = datetime.fromisoformat(f"{start_date}T00:00:00+00:00")
-                        end_datetime = datetime.fromisoformat(f"{end_date}T23:59:59+00:00")
-
-                        if start_datetime <= article_datetime <= end_datetime:
-                            news_articles.append({
-                                'published_utc': article.published_utc,
-                                'title': getattr(article, 'title', ''),
-                                'description': getattr(article, 'description', ''),
-                                'author': getattr(article, 'author', ''),
-                                'article_url': getattr(article, 'article_url', ''),
-                                'tickers': getattr(article, 'tickers', [])
-                            })
-                    count += 1
-
-            except Exception as e2:
-                logger.error(f"Error fetching news with fallback method: {e2}")
-                return []
-
-        logger.info(f"Successfully fetched {len(news_articles)} news articles")
-        return news_articles
-
-    except Exception as e:
-        logger.error(f"Error fetching news data: {e}")
-        return []
 
 @mcp.tool()
 def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
@@ -416,76 +203,6 @@ def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
 
     logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
     return result
-
-@mcp.tool()
-def polygon_news(
-    start_date: str = "",
-    end_date: str = "",
-    ticker: str = ""
-) -> str:
-    """
-    Fetches market news from Polygon.io and saves to CSV file.
-
-    Parameters:
-        start_date (str, optional): The start date in 'YYYY-MM-DD' format.
-            Defaults to 7 days before today if not provided.
-        end_date (str, optional): The end date in 'YYYY-MM-DD' format.
-            Defaults to today if not provided.
-        ticker (str, optional): Specific ticker symbol to fetch news for (e.g., 'AAPL').
-            If not provided, fetches general market news.
-
-    Returns:
-        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
-
-    CSV Output Structure:
-        - datetime (str): Publication date and time in 'YYYY-MM-DD HH:MM:SS' format
-        - topic (str): News article title/headline
-
-    Use this data for: News sentiment analysis, market event tracking, timeline analysis.
-    Always use py_eval tool to analyze the saved CSV file.
-    """
-    logger.info(f"polygon_news invoked: start_date={start_date}, end_date={end_date}, ticker={ticker}")
-
-    # Try to fetch real data from Polygon API
-    news_data = fetch_polygon_news_data(start_date, end_date, limit=100, ticker=ticker)
-
-    # Convert to format suitable for CSV
-    processed_news = []
-    for article in news_data:
-        # Parse the published_utc datetime
-        try:
-            if article.get('published_utc'):
-                # Handle both Z and +00:00 timezone formats
-                dt_str = article['published_utc']
-                if dt_str.endswith('Z'):
-                    dt_str = dt_str[:-1] + '+00:00'
-                dt = datetime.fromisoformat(dt_str)
-                formatted_datetime = dt.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                formatted_datetime = "Unknown"
-        except (ValueError, TypeError) as e:
-            logger.warning(f"Error parsing datetime: {e}")
-            formatted_datetime = str(article.get('published_utc', 'Unknown'))
-
-        # Get title or description as the topic
-        topic = article.get('title') or article.get('description', 'No title available')
-
-        processed_news.append({
-            "datetime": formatted_datetime,
-            "topic": topic
-        })
-
-    # Always save to CSV file
-    import pandas as pd
-    df = pd.DataFrame(processed_news)
-    filename = f"news_{ticker}_{str(uuid.uuid4())[:8]}.csv" if ticker else f"news_{str(uuid.uuid4())[:8]}.csv"
-    filepath = CSV_DIR / filename
-    df.to_csv(filepath, index=False)
-    logger.info(f"polygon_news saved CSV: {filename} ({len(processed_news)} articles)")
-
-    # Return formatted response
-    return _format_csv_response(filepath, df)
-
 
 @mcp.tool()
 def polygon_ticker_details(
@@ -548,7 +265,7 @@ def polygon_ticker_details(
         logger.info(f"Saved ticker details to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_ticker_details: {e}")
@@ -618,7 +335,7 @@ def polygon_price_data(
         logger.info(f"Saved price data to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_price_data: {e}")
@@ -690,7 +407,7 @@ def polygon_price_metrics(
         logger.info(f"Saved price metrics to {filename} ({len(metrics_df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, metrics_df)
+        return format_csv_response(filepath, metrics_df)
 
     except Exception as e:
         logger.error(f"Error in polygon_price_metrics: {e}")
@@ -810,7 +527,7 @@ def polygon_crypto_aggregates(
         logger.info(f"Saved crypto aggregates to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_aggregates: {e}")
@@ -957,7 +674,7 @@ def polygon_crypto_conditions(
         logger.info(f"Saved crypto conditions to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_conditions: {e}")
@@ -1072,7 +789,7 @@ def polygon_crypto_daily_open_close(
         logger.info(f"Saved crypto daily open/close to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_daily_open_close: {e}")
@@ -1175,7 +892,7 @@ def polygon_crypto_exchanges(
         logger.info(f"Saved crypto exchanges to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_exchanges: {e}")
@@ -1283,7 +1000,7 @@ def polygon_crypto_grouped_daily_bars(
         logger.info(f"Saved crypto grouped daily bars to {filename} ({len(df)} crypto pairs)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_grouped_daily_bars: {e}")
@@ -1400,7 +1117,7 @@ def polygon_crypto_previous_close(
         logger.info(f"Saved crypto previous close to {filename} ({len(df)} record)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_previous_close: {e}")
@@ -1563,7 +1280,7 @@ def polygon_crypto_snapshots(
         logger.info(f"Saved crypto snapshots to {filename} ({len(df)} crypto pairs)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_snapshots: {e}")
@@ -1679,7 +1396,7 @@ def polygon_crypto_last_trade(
         logger.info(f"Saved crypto last trade to {filename}")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_crypto_last_trade: {e}")
@@ -1776,7 +1493,7 @@ def polygon_market_holidays() -> str:
         logger.info(f"Saved market holidays to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_market_holidays: {e}")
@@ -1890,7 +1607,7 @@ def polygon_market_status() -> str:
         logger.info(f"Saved market status to {filename}")
 
         # Return formatted response
-        return _format_csv_response(filepath, df)
+        return format_csv_response(filepath, df)
 
     except Exception as e:
         logger.error(f"Error in polygon_market_status: {e}")
