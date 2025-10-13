@@ -104,8 +104,8 @@ else:
 
 mcp = FastMCP(_safe_name, streamable_http_path=STREAM_PATH, json_response=True)
 
-# CSV storage directory
-CSV_DIR = pathlib.Path(os.environ.get('CSV_DIR')).resolve()
+# CSV storage directory (hardcoded for simplicity)
+CSV_DIR = pathlib.Path("data/mcp-polygon")
 CSV_DIR.mkdir(parents=True, exist_ok=True)
 
 # Polygon MCP tools

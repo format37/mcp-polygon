@@ -13,7 +13,6 @@ services:
       - MCP_REQUIRE_AUTH=false
       - MCP_ALLOW_URL_TOKENS=true
       - SENTRY_DSN=$SENTRY_DSN
-      - CSV_DIR=data/mcp-polygon
     ports:
       - "8009:8009"
     volumes:
