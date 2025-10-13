@@ -1,0 +1,476 @@
+{
+  "name": "polygon-mcp-prompting",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "29b46dad-b735-4da8-9ea9-394172bfed92",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/alex/projects/client-python/examples/rest/crypto*.py",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "ca696b2a-760d-410a-838c-79e36e67fcb3",
+      "name": "Read/Write Files from Disk",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        432,
+        0
+      ],
+      "id": "73d2d584-ea52-41e7-b465-12935c5c52f4",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/home/alex/projects/mcp-polygon/examples/{{$binary.data.fileName}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        640,
+        96
+      ],
+      "id": "8b8b5a87-fb86-4f7b-bdad-5f12b69f18cd",
+      "name": "Read/Write Files from Disk1"
+    },
+    {
+      "parameters": {
+        "command": "=rm  {{ $('Read/Write Files from Disk1').item.json.fileName }}.md"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2768,
+        96
+      ],
+      "id": "5b37b57c-eb5b-466b-a4d0-cff2666cd60a",
+      "name": "Execute Command",
+      "notesInFlow": true,
+      "notes": "Delete md"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "import re\n\n# text = \"\"\"from polygon import RESTClient\n# from polygon.rest.models import (\n#     Exchange,\n# )\n\n# # docs\n# # https://polygon.io/docs/crypto/get_v3_reference_exchanges\n# # https://polygon-api-client.readthedocs.io/en/latest/Reference.html#get-exchanges\n# ...\"\"\"\n\n# previousNodeData = _(\"Read/Write Files from Disk4\").all();\n# print(f\"Len: {len(previousNodeData)}\")\n# for item in previousNodeData:\n# \t# item is of type <class 'pyodide.ffi.JsProxy'>\n# \t# You need to convert it to a Dict\n# \titemDict = item.json.to_py()\n# \tprint(itemDict)\n\ntext = _input.first().json.data\n\n# Regex pattern: finds first URL after \"# docs\"\npattern = r'# docs\\s*\\n\\s*#\\s*(https?://[^\\s]+)'\nmatch = re.search(pattern, text)\n\nif match:\n    url = match.group(1)\n    # url = url.replace(\"/rest/\", \"/api/llms/rest/\")\n    return [{\"url\": url}]\n\nelse:\n    raise ValueError(\"No URL found after '# docs' comment\")"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        96
+      ],
+      "id": "01d651e2-b49f-4984-ae11-7193ad804f73",
+      "name": "Code in Python (Beta)",
+      "notesInFlow": true,
+      "notes": "URL extractor"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        96
+      ],
+      "id": "fbbe6e26-377d-4d68-8b44-c56e4524d7da",
+      "name": "HTTP Request",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "Redirect catch"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $('Read/Write Files from Disk1').item.json.fileName }}.md",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1824,
+        96
+      ],
+      "id": "5370e6d7-5668-4582-8764-b7ecbb113bb2",
+      "name": "Read/Write Files from Disk2"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "url = _input.first().json.error.message\nurl = url.replace('308 - \"', \"\")\nurl = url.replace('\"', \"\")\nurl = url.replace(\"/docs/rest/\", \"https://polygon.io/docs/rest/\")\n# Convert to md\nurl = url.replace(\"/rest/\", \"/api/llms/rest/\")\nreturn [{\"url\": url}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        96
+      ],
+      "id": "347860bd-7739-46dc-831d-97e1571d61e4",
+      "name": "Code in Python (Beta)1",
+      "notesInFlow": true,
+      "notes": "URL formatting"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1456,
+        96
+      ],
+      "id": "6d424c54-c975-4eae-a4b3-69dc7bc7e3b4",
+      "name": "HTTP Request1",
+      "notesInFlow": true,
+      "notes": "Download markdown"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1632,
+        96
+      ],
+      "id": "07033ff3-850a-41e5-8d01-f76f4b5c2df5",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "py_file = \"examples/\"+_('Loop Over Items').first().json.fileName\nmd_file = py_file+\".md\"\nprompt = f\"\"\"# Project overview\nPolygon MCP server aimed to provide Polygon API endpoints as MCP tools.\nPolygon has reach table data, that we are saving to csv for subsequent analysis in python.\nEach polygon fetch mcp tool has is saving their output to csv on the server, in a folder, available for py_eval tool for analysis.\nEach mcp tool should have a comprehensive description of the input params. Each fetch tool should return only csv file name, requires client to use python tool to read this file.\nWe are aimed to make a crypto trading agent so this mcp server would be used to make crypto market decisions.\n\nI've moved the polygon_news function to the separate file:\n* backend/polygon_tools/news.py\nTo provide this tool, I've imported and called the register_polygon_news function.\nThis make our project modular and helps to avoid extra token expences when analysing the scripts.\n\n# Issue:\nNot all Polygon endoints implemented.\n\n# Task\nPlease, read the following files:\n* {py_file}\n* {md_file}\nNeed to implement a solid tool to call this endpoint. Use input params that make sense. The output should be csv file name as we agreed.\n\n# Involved files:\n* backend/main.py\n* backend/polygon_tools/news.py\n* backent/mcp_service.py\n* backend/polygon_data_fetcher.py\n* backend/requirements.txt\n* docker-compose.local.yml\n* docker-compose.production.yml\n* compose.local.sh\n* compose.prod.sh\n* backend/Dockerfile.local\n* backend/Dockerfile.prod\n* .env.local\n* .env.production\n\n# Finally\nPlease, don't compose docker. U have no rights. I would compose and test on my own.\nI need to test it. Recently to test another endpoints I've made the following request:\n```\nPlease, call the polygon news about aapl limit 10 rows, and tell the start and end date of the table\n```\n\nSo finally, compose a request for agent to make simple test our new endopint. Account that agent should prove that they read csv.\"\"\"\nreturn {\"prompt\":prompt}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        96
+      ],
+      "id": "1fe5001c-bf1e-4926-89f8-96c9b240b9fc",
+      "name": "Code in Python (Beta)2",
+      "notesInFlow": true,
+      "notes": "Prompt composer"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "prompt",
+        "binaryPropertyName": "=prompt",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        2192,
+        96
+      ],
+      "id": "5b2635df-e1f2-474d-945a-4989029b64f8",
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/alex/projects/mcp-polygon/prompt.md",
+        "dataPropertyName": "prompt",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        2368,
+        96
+      ],
+      "id": "90b4ea06-92d1-4296-973f-4f28504a9563",
+      "name": "Read/Write Files from Disk3"
+    },
+    {
+      "parameters": {
+        "command": "=rm  {{ $('Read/Write Files from Disk1').item.json.fileName }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2944,
+        96
+      ],
+      "id": "6c3b9a88-4224-4ee1-b0cc-6ef4e76af715",
+      "name": "Execute Command1",
+      "notesInFlow": true,
+      "notes": "Delete py"
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "formTitle": "Continue",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2544,
+        96
+      ],
+      "id": "2b238161-f542-4aef-97d5-a3bd6ccc5682",
+      "name": "Wait",
+      "webhookId": "14ea02f5-a93d-4dbc-bb72-210f79dd0c85"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        800,
+        96
+      ],
+      "id": "d49fa9f1-d400-48ab-aa21-4d4a5dad6d2e",
+      "name": "Extract from File"
+    }
+  ],
+  "pinData": {
+    "When clicking ‘Execute workflow’": [
+      {
+        "json": {}
+      }
+    ]
+  },
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Read/Write Files from Disk1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk1": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Execute Command1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in Python (Beta)": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in Python (Beta)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in Python (Beta)1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk2": {
+      "main": [
+        [
+          {
+            "node": "Code in Python (Beta)2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in Python (Beta)2": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk3": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in Python (Beta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "bc1a97d5-f36c-42d3-90b9-e08c18f4b2de",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "79142cb85f26e89033257f11a757650c0635ac78145f82075fbc688a82a0f24c"
+  },
+  "id": "TtZlJv5Sjb0zoku2",
+  "tags": []
+}
