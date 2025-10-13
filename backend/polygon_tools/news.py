@@ -113,7 +113,7 @@ def fetch_news(
 
     except Exception as e:
         logger.error(f"Error fetching news from Polygon API: {e}")
-        return pd.DataFrame()
+        raise
 
     df = pd.DataFrame(records)
 

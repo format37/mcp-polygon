@@ -122,7 +122,7 @@ def fetch_crypto_conditions(
 
     except Exception as e:
         logger.error(f"Error fetching crypto conditions: {e}")
-        return pd.DataFrame()
+        raise
 
     df = pd.DataFrame(records)
 

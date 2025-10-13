@@ -76,7 +76,7 @@ def fetch_crypto_grouped_daily_bars(
 
     except Exception as e:
         logger.error(f"Error fetching crypto grouped daily bars for {date}: {e}")
-        return pd.DataFrame()
+        raise
 
 
 def register_polygon_crypto_grouped_daily(local_mcp_instance, local_polygon_client, csv_dir):

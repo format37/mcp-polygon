@@ -78,7 +78,7 @@ def fetch_crypto_aggregates(polygon_client: RESTClient,
 
     except Exception as e:
         logger.error(f"Error fetching crypto aggregates for {ticker}: {e}")
-        return pd.DataFrame()
+        raise
 
     df = pd.DataFrame(records)
 

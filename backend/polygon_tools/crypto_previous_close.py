@@ -82,7 +82,7 @@ def fetch_crypto_previous_close(
 
     except Exception as e:
         logger.error(f"Error fetching crypto previous close for {ticker}: {e}")
-        return pd.DataFrame()
+        raise
 
 
 def register_polygon_crypto_previous_close(local_mcp_instance, local_polygon_client, csv_dir):

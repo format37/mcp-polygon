@@ -102,7 +102,7 @@ def fetch_crypto_daily_open_close(
 
     except Exception as e:
         logger.error(f"Error fetching crypto daily open/close for {ticker} on {date}: {e}")
-        return pd.DataFrame()
+        raise
 
 
 def register_polygon_crypto_daily_open_close(local_mcp_instance, local_polygon_client, csv_dir):

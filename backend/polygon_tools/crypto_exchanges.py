@@ -62,7 +62,7 @@ def fetch_crypto_exchanges(
 
     except Exception as e:
         logger.error(f"Error fetching crypto exchanges: {e}")
-        return pd.DataFrame()
+        raise
 
     df = pd.DataFrame(records)
 
