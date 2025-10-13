@@ -27,6 +27,7 @@ from polygon_tools.crypto_exchanges import register_polygon_crypto_exchanges
 from polygon_tools.crypto_grouped_daily import register_polygon_crypto_grouped_daily
 from polygon_tools.crypto_previous_close import register_polygon_crypto_previous_close
 from polygon_tools.crypto_snapshots import register_polygon_crypto_snapshots
+from polygon_tools.crypto_snapshot_ticker import register_polygon_crypto_snapshot_ticker
 from polygon_tools.crypto_last_trade import register_polygon_crypto_last_trade
 from polygon_tools.market_holidays import register_polygon_market_holidays
 from polygon_tools.market_status import register_polygon_market_status
@@ -115,6 +116,7 @@ register_polygon_crypto_exchanges(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_grouped_daily(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_previous_close(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_snapshots(mcp, polygon_client, CSV_DIR)
+register_polygon_crypto_snapshot_ticker(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_aggregates(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_last_trade(mcp, polygon_client, CSV_DIR)
 register_polygon_market_holidays(mcp, polygon_client, CSV_DIR)
