@@ -140,7 +140,8 @@ def fetch_crypto_snapshots(
 
     except Exception as e:
         logger.error(f"Error fetching crypto snapshots: {e}")
-        return pd.DataFrame()
+        # Re-raise the exception so the tool function can return the error to the user
+        raise
 
     df = pd.DataFrame(records)
 
