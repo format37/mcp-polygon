@@ -1,5 +1,4 @@
 .env.production
-.env.local
 prompt.md
 prompt_b.md
 prompt_c.md
