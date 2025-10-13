@@ -2,6 +2,7 @@
 .env.local
 prompt.md
 prompt_b.md
+prompt_c.md
 csv/
 backend/__pycache__/
 examples/
