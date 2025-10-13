@@ -1,0 +1,1 @@
+Please call the polygon_crypto_exchanges tool with locale='us', then use py_eval to read the CSV and tell me: (1) how many exchanges were returned, (2) the first 3 exchange names, and (3) list all the unique locales in the data
