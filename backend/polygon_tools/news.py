@@ -15,7 +15,7 @@ def fetch_news(
     ticker: str = "",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    limit: int = 10,
+    limit: int = 1000,
     order: str = "desc",
     sort: str = "published_utc",
 ) -> pd.DataFrame:
@@ -27,7 +27,7 @@ def fetch_news(
         ticker: Specific ticker symbol to fetch news for (e.g., 'AAPL'). If empty, fetches general market news.
         start_date: Start date in YYYY-MM-DD format. Defaults to 7 days ago if not provided.
         end_date: End date in YYYY-MM-DD format. Defaults to today if not provided.
-        limit: Maximum number of news articles to fetch (default: 10, max: 1000)
+        limit: Maximum number of news articles to fetch (default: 1000, max: 1000)
         order: Order results based on sort field (default: "desc")
         sort: Sort field used for ordering (default: "published_utc")
 
@@ -129,7 +129,7 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
         ticker: str = "",
         start_date: str = "",
         end_date: str = "",
-        limit: int = 10
+        # limit: int = 10
     ) -> str:
         """
         Fetch market news from Polygon.io and save to CSV file for analysis.
@@ -145,8 +145,6 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
                 Defaults to 7 days before today if not provided.
             end_date (str, optional): End date in 'YYYY-MM-DD' format.
                 Defaults to today if not provided.
-            limit (int, optional): Maximum number of news articles to fetch.
-                Defaults to 10. Maximum allowed is 1000.
 
         Returns:
             str: Formatted response with CSV file info, schema, sample data, and Python snippet to load the file.
@@ -171,6 +169,7 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
         Example usage:
             polygon_news(ticker="AAPL", start_date="2025-10-05", end_date="2025-10-12", limit=10)
         """
+        limit = 1000  # Fixed limit to max 1000 for performance
 
         logger.info(
             f"polygon_news tool invoked: ticker={ticker or 'general'}, "

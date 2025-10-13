@@ -9,18 +9,13 @@ WORKDIR /app
 
 # No additional system dependencies needed for Polygon API
 
-# Copy application code
-COPY . .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create directory for data storage
-# RUN mkdir -p data
-
-# Create non-root user for security
-# RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-# USER appuser
+# Copy application code
+COPY . .
 
 # Expose port
 EXPOSE 8009
