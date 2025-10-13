@@ -30,6 +30,7 @@ from polygon_tools.crypto_snapshots import register_polygon_crypto_snapshots
 from polygon_tools.crypto_snapshot_ticker import register_polygon_crypto_snapshot_ticker
 from polygon_tools.crypto_snapshot_book import register_polygon_crypto_snapshot_book
 from polygon_tools.crypto_last_trade import register_polygon_crypto_last_trade
+from polygon_tools.crypto_tickers import register_polygon_crypto_tickers
 from polygon_tools.market_holidays import register_polygon_market_holidays
 from polygon_tools.market_status import register_polygon_market_status
 from polygon_tools.crypto_gainers_losers import register_polygon_crypto_gainers_losers
@@ -125,6 +126,7 @@ register_polygon_crypto_snapshot_ticker(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_snapshot_book(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_aggregates(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_last_trade(mcp, polygon_client, CSV_DIR)
+register_polygon_crypto_tickers(mcp, polygon_client, CSV_DIR)
 register_polygon_market_holidays(mcp, polygon_client, CSV_DIR)
 register_polygon_market_status(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_gainers_losers(mcp, polygon_client, CSV_DIR)
