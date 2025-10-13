@@ -1,8 +1,16 @@
 import pathlib
-from typing import Any
+from typing import Any, Dict
 import pandas as pd
 import json
 import logging
+import io
+import sys
+import time
+import uuid
+import traceback
+import signal
+import os
+from contextlib import redirect_stdout, redirect_stderr
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,6 +68,27 @@ def infer_better_type(series):
         return 'string'
 
     return dtype_str
+
+
+def _posix_time_limit(seconds: float):
+    """POSIX-only wall clock timeout using signals; noop elsewhere."""
+    class _TL:
+        def __enter__(self_):
+            self_.posix = (os.name == "posix" and hasattr(signal, "setitimer"))
+            if not self_.posix:
+                return
+            self_.old_handler = signal.getsignal(signal.SIGALRM)
+            def _raise(_sig, _frm):
+                raise TimeoutError("time limit exceeded")
+            signal.signal(signal.SIGALRM, _raise)
+            signal.setitimer(signal.ITIMER_REAL, float(seconds))
+        def __exit__(self_, exc_type, exc, tb):
+            if self_.posix:
+                signal.setitimer(signal.ITIMER_REAL, 0.0)
+                signal.signal(signal.SIGALRM, self_.old_handler)
+            return False
+    return _TL()
+
 
 def format_csv_response(filepath: pathlib.Path, df: Any) -> str:
     """
@@ -162,9 +191,71 @@ Python snippet to load:
 
         logger.info(f"Response generated successfully. Response length: {len(response)} characters")
         return response
-        
+
     except Exception as e:
         logger.error(f"Error in format_csv_response: {str(e)}")
         logger.error(f"Exception type: {type(e)}")
         # Re-raise the exception to maintain original behavior
         raise
+
+
+def register_py_eval(local_mcp_instance, csv_dir):
+    """Register the py_eval tool for Python code execution"""
+    @local_mcp_instance.tool()
+    def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
+        """
+        Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
+
+        Parameters:
+            code (str): Python code to execute
+            timeout_sec (float): Execution timeout in seconds (default: 5.0)
+
+        Returns:
+            dict: Execution results with stdout, stderr, duration_ms, and error info
+
+        Available variables in execution environment:
+            - pd: pandas library
+            - np: numpy library
+            - CSV_PATH: path to data/mcp-polygon folder for reading/writing CSV files
+        """
+        logger.info(f"py_eval invoked with {len(code)} characters of code")
+
+        # Capture output
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        started = time.time()
+
+        try:
+            # Import scientific libraries in execution environment
+            import pandas as pd
+            import numpy as np
+
+            # Create execution environment
+            env = {
+                "__builtins__": __builtins__,
+                "pd": pd,
+                "np": np,
+                "CSV_PATH": str(csv_dir),
+            }
+
+            with redirect_stdout(buf_out), redirect_stderr(buf_err), _posix_time_limit(timeout_sec):
+                exec(code, env, env)
+            ok, error = True, None
+
+        except TimeoutError as e:
+            ok, error = False, f"Timeout: {e}"
+        except Exception:
+            ok, error = False, traceback.format_exc()
+
+        duration_ms = int((time.time() - started) * 1000)
+
+        result = {
+            "ok": ok,
+            "stdout": buf_out.getvalue(),
+            "stderr": buf_err.getvalue(),
+            "error": error,
+            "duration_ms": duration_ms,
+            "csv_path": str(csv_dir)
+        }
+
+        logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
+        return result

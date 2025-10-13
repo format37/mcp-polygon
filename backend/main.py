@@ -3,20 +3,18 @@ import contextvars
 import logging
 import os
 import re
-from typing import Any, Optional, List, Dict
+from typing import Any, Dict
 import sentry_sdk
 import uvicorn
+import pathlib
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
-from polygon_data_fetcher import (
-    fetch_market_status
-)
-from mcp_service import format_csv_response
 from polygon import RESTClient
+from mcp_service import register_py_eval
 from polygon_tools.news import register_polygon_news
 from polygon_tools.ticker_details import register_polygon_ticker_details
 from polygon_tools.price_data import register_polygon_price_data
@@ -29,16 +27,7 @@ from polygon_tools.crypto_previous_close import register_polygon_crypto_previous
 from polygon_tools.crypto_snapshots import register_polygon_crypto_snapshots
 from polygon_tools.crypto_last_trade import register_polygon_crypto_last_trade
 from polygon_tools.market_holidays import register_polygon_market_holidays
-
-# Python execution imports
-import io
-import sys
-import time
-import uuid
-import pathlib
-import traceback
-import signal
-from contextlib import redirect_stdout, redirect_stderr
+from polygon_tools.market_status import register_polygon_market_status
 
 logger = logging.getLogger(__name__)
 
@@ -121,25 +110,8 @@ register_polygon_crypto_snapshots(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_aggregates(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_last_trade(mcp, polygon_client, CSV_DIR)
 register_polygon_market_holidays(mcp, polygon_client, CSV_DIR)
-
-def _posix_time_limit(seconds: float):
-    """POSIX-only wall clock timeout using signals; noop elsewhere."""
-    class _TL:
-        def __enter__(self_):
-            self_.posix = (os.name == "posix" and hasattr(signal, "setitimer"))
-            if not self_.posix:
-                return
-            self_.old_handler = signal.getsignal(signal.SIGALRM)
-            def _raise(_sig, _frm):
-                raise TimeoutError("time limit exceeded")
-            signal.signal(signal.SIGALRM, _raise)
-            signal.setitimer(signal.ITIMER_REAL, float(seconds))
-        def __exit__(self_, exc_type, exc, tb):
-            if self_.posix:
-                signal.setitimer(signal.ITIMER_REAL, 0.0)
-                signal.signal(signal.SIGALRM, self_.old_handler)
-            return False
-    return _TL()
+register_polygon_market_status(mcp, polygon_client, CSV_DIR)
+register_py_eval(mcp, CSV_DIR)
 
 # Add custom error handling for stream disconnections
 original_logger = logging.getLogger("mcp.server.streamable_http")
@@ -152,180 +124,6 @@ class StreamErrorFilter(logging.Filter):
         return True
 
 original_logger.addFilter(StreamErrorFilter())
-
-@mcp.tool()
-def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
-    """
-    Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
-
-    Parameters:
-        code (str): Python code to execute
-        timeout_sec (float): Execution timeout in seconds (default: 5.0)
-
-    Returns:
-        dict: Execution results with stdout, stderr, duration_ms, and error info
-
-    Available variables in execution environment:
-        - pd: pandas library
-        - np: numpy library
-        - CSV_PATH: path to data/mcp-polygon folder for reading/writing CSV files
-    """
-    logger.info(f"py_eval invoked with {len(code)} characters of code")
-
-    # Capture output
-    buf_out, buf_err = io.StringIO(), io.StringIO()
-    started = time.time()
-
-    try:
-        # Import scientific libraries in execution environment
-        import pandas as pd
-        import numpy as np
-
-        # Create execution environment
-        env = {
-            "__builtins__": __builtins__,
-            "pd": pd,
-            "np": np,
-            "CSV_PATH": str(CSV_DIR),
-        }
-
-        with redirect_stdout(buf_out), redirect_stderr(buf_err), _posix_time_limit(timeout_sec):
-            exec(code, env, env)
-        ok, error = True, None
-
-    except TimeoutError as e:
-        ok, error = False, f"Timeout: {e}"
-    except Exception:
-        ok, error = False, traceback.format_exc()
-
-    duration_ms = int((time.time() - started) * 1000)
-
-    result = {
-        "ok": ok,
-        "stdout": buf_out.getvalue(),
-        "stderr": buf_err.getvalue(),
-        "error": error,
-        "duration_ms": duration_ms,
-        "csv_path": str(CSV_DIR)
-    }
-
-    logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
-    return result
-
-
-@mcp.tool()
-def polygon_market_status() -> str:
-    """
-    Fetch current market status across all exchanges and asset classes, and save to CSV file.
-
-    This endpoint retrieves the current trading status for various exchanges and overall financial
-    markets. It provides real-time indicators of whether markets are open, closed, or operating in
-    pre-market/after-hours sessions, along with timing details for the current state.
-
-    Parameters:
-        None (endpoint automatically returns current status snapshot)
-
-    Returns:
-        str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
-
-    CSV Output Structure:
-        - fetched_at (str): Local timestamp when this data was fetched in 'YYYY-MM-DD HH:MM:SS' format
-        - server_time (str): API server time in RFC3339 format (e.g., "2020-11-10T17:37:37-05:00")
-            Use this as the authoritative timestamp for market status
-        - market (str): Overall market status across all exchanges
-            Values: "open", "closed", "extended-hours", "early-hours"
-        - after_hours (bool): Whether markets are in post-market hours (after normal trading)
-        - early_hours (bool): Whether markets are in pre-market hours (before normal trading)
-        - crypto_status (str): Status of cryptocurrency markets
-            Values: "open", "closed"
-            Note: Crypto markets typically trade 24/7, so usually "open"
-        - fx_status (str): Status of foreign exchange (forex) markets
-            Values: "open", "closed"
-            Note: FX markets trade nearly 24/7 on weekdays
-        - nasdaq_status (str): Status of NASDAQ exchange
-            Values: "open", "closed", "extended-hours", "early-close"
-        - nyse_status (str): Status of New York Stock Exchange
-            Values: "open", "closed", "extended-hours", "early-close"
-        - otc_status (str): Status of Over-The-Counter markets
-            Values: "open", "closed"
-        - index_cccy (str): Status of Cboe Streaming Market Indices Cryptocurrency ("CCCY") indices
-        - index_cgi (str): Status of Cboe Global Indices ("CGI") trading hours
-        - index_dow_jones (str): Status of Dow Jones indices trading hours
-        - index_ftse_russell (str): Status of FTSE Russell indices trading hours
-        - index_msci (str): Status of MSCI indices trading hours
-        - index_mstar (str): Status of Morningstar indices trading hours
-        - index_mstarc (str): Status of Morningstar Customer indices trading hours
-        - index_nasdaq (str): Status of Nasdaq indices trading hours
-        - index_s_and_p (str): Status of S&P indices trading hours
-        - index_societe_generale (str): Status of Societe Generale indices trading hours
-
-    Use Cases:
-        - **Real-Time Monitoring**: Check if markets are currently open for trading
-        - **Algorithm Scheduling**: Determine when to run trading algorithms based on market hours
-        - **UI Updates**: Display current market status to users in trading applications
-        - **Operational Planning**: Schedule system maintenance during market closures
-        - **Trading Strategy**: Adjust crypto trading strategies based on traditional market hours
-        - **Order Validation**: Prevent order submission when target markets are closed
-        - **Risk Management**: Understand when gaps may occur due to market closures
-        - **Crypto vs Traditional Markets**: Coordinate crypto trading with traditional market status
-        - **International Trading**: Track multiple exchange statuses for global trading operations
-        - **Market Hours Analysis**: Analyze patterns of market openings and closings
-
-    Important Notes:
-        - This endpoint returns a single snapshot of the current status (one row)
-        - Status changes throughout the trading day (pre-market → open → after-hours → closed)
-        - **Crypto markets trade 24/7** - crypto_status is typically always "open"
-        - Traditional stock markets (NYSE, NASDAQ) have specific hours (typically 9:30 AM - 4:00 PM ET)
-        - Extended hours trading occurs before and after regular market hours
-        - Use server_time as the authoritative timestamp (not fetched_at)
-        - Call this endpoint regularly to monitor real-time market status changes
-        - Combine with polygon_market_holidays to understand upcoming closures
-
-    Trading Strategy Considerations:
-        - **Crypto Trading**: Crypto markets are open 24/7, but liquidity/volatility varies when traditional markets close
-        - **Volatility**: Markets often experience higher volatility at open and close
-        - **Liquidity**: Extended hours typically have lower volume and wider spreads
-        - **Gap Risk**: Markets closed overnight can create price gaps at next open
-        - **Coordination**: Some crypto traders adjust strategies based on traditional market hours
-
-    Example Workflow:
-        1. Call this tool to fetch current market status
-        2. Receive CSV filename in response
-        3. Use py_eval to load and analyze the CSV file
-        4. Check specific market statuses (crypto_status, nyse_status, etc.)
-        5. Make trading decisions based on which markets are currently active
-        6. Integrate into automated systems for real-time market monitoring
-
-    Integration with Other Tools:
-        - Use with polygon_market_holidays to plan around upcoming closures
-        - Combine with polygon_crypto_aggregates for 24/7 crypto market analysis
-        - Coordinate with polygon_news to understand market-moving events
-        - Use with trading algorithms to ensure orders are placed during market hours
-
-    Always use py_eval tool to analyze the saved CSV file for market status checks and trading decisions.
-    """
-    logger.info("polygon_market_status invoked")
-
-    try:
-        # Fetch market status
-        df = fetch_market_status(output_dir=None)
-
-        if df.empty:
-            return "No market status data was retrieved. The endpoint may be temporarily unavailable."
-
-        # Always save to CSV file
-        filename = f"market_status_{uuid.uuid4().hex[:8]}.csv"
-        filepath = CSV_DIR / filename
-        df.to_csv(filepath, index=False)
-        logger.info(f"Saved market status to {filename}")
-
-        # Return formatted response
-        return format_csv_response(filepath, df)
-
-    except Exception as e:
-        logger.error(f"Error in polygon_market_status: {e}")
-        return f"Error fetching market status: {str(e)}"
-
 
 @mcp.resource(
     f"{_safe_name}://documentation",
