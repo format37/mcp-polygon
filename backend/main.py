@@ -33,6 +33,7 @@ from polygon_tools.crypto_last_trade import register_polygon_crypto_last_trade
 from polygon_tools.market_holidays import register_polygon_market_holidays
 from polygon_tools.market_status import register_polygon_market_status
 from polygon_tools.crypto_gainers_losers import register_polygon_crypto_gainers_losers
+from polygon_tools.crypto_ema import register_polygon_crypto_ema
 
 load_dotenv(".env")
 
@@ -124,6 +125,7 @@ register_polygon_crypto_last_trade(mcp, polygon_client, CSV_DIR)
 register_polygon_market_holidays(mcp, polygon_client, CSV_DIR)
 register_polygon_market_status(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_gainers_losers(mcp, polygon_client, CSV_DIR)
+register_polygon_crypto_ema(mcp, polygon_client, CSV_DIR)
 register_py_eval(mcp, CSV_DIR)
 
 # Add custom error handling for stream disconnections
