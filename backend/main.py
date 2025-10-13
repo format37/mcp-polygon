@@ -7,6 +7,7 @@ from typing import Any, Dict
 import sentry_sdk
 import uvicorn
 import pathlib
+from dotenv import load_dotenv
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -29,6 +30,8 @@ from polygon_tools.crypto_snapshots import register_polygon_crypto_snapshots
 from polygon_tools.crypto_last_trade import register_polygon_crypto_last_trade
 from polygon_tools.market_holidays import register_polygon_market_holidays
 from polygon_tools.market_status import register_polygon_market_status
+
+load_dotenv(".env")
 
 logger = logging.getLogger(__name__)
 

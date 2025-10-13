@@ -29,7 +29,7 @@ docker rmi -f mcp-polygon-mcp-polygon 2>/dev/null || true
 
 # Build and start services
 echo "🏗️  Building and starting services..."
-docker compose -f docker-compose.local.yml up --build -d
+docker compose -f docker-compose.local.yml up -d --build --remove-orphans
 
 echo "✅ Polygon MCP Server is running in local mode!"
 echo "🔧 MCP Endpoint: http://localhost:8009/polygon/"

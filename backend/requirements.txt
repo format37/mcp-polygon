@@ -12,3 +12,4 @@ pandas>=2.0.0
 numpy>=1.24.0
 pyarrow>=10.0.0
 polygon-api-client==1.15.4
+python-dotenv>=1.0.0

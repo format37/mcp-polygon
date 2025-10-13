@@ -4,19 +4,19 @@ services:
       context: ./backend
       dockerfile: Dockerfile.local
     container_name: mcp-polygon-local
-    env_file:
-      - .env.local
+    # env_file:
+    #   - .env.local
     environment:
       - PORT=8009
       - TZ=UTC
       - MCP_NAME=polygon
       - MCP_REQUIRE_AUTH=false
       - MCP_ALLOW_URL_TOKENS=true
-      - SENTRY_DSN=$SENTRY_DSN
     ports:
       - "8009:8009"
     volumes:
       - ./data:/app/data:rw
+      - ./.env.local:/app/.env:ro
     # restart: unless-stopped
     networks:
       - default
