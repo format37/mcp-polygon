@@ -36,6 +36,7 @@ from polygon_tools.crypto_gainers_losers import register_polygon_crypto_gainers_
 from polygon_tools.crypto_ema import register_polygon_crypto_ema
 from polygon_tools.crypto_macd import register_polygon_crypto_macd
 from polygon_tools.crypto_rsi import register_polygon_crypto_rsi
+from polygon_tools.crypto_sma import register_polygon_crypto_sma
 
 load_dotenv(".env")
 
@@ -130,6 +131,7 @@ register_polygon_crypto_gainers_losers(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_ema(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_macd(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_rsi(mcp, polygon_client, CSV_DIR)
+register_polygon_crypto_sma(mcp, polygon_client, CSV_DIR)
 register_py_eval(mcp, CSV_DIR)
 
 # Add custom error handling for stream disconnections
