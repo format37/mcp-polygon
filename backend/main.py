@@ -16,6 +16,7 @@ from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
 from polygon import RESTClient
 from mcp_service import register_py_eval
+from mcp_service import register_tool_notes
 from mcp_resources import register_mcp_resources
 from polygon_tools.news import register_polygon_news
 from polygon_tools.ticker_details import register_polygon_ticker_details
@@ -136,7 +137,8 @@ register_polygon_crypto_macd(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_rsi(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_sma(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_trades(mcp, polygon_client, CSV_DIR)
-register_py_eval(mcp, CSV_DIR)
+# register_py_eval(mcp, CSV_DIR)
+register_tool_notes(mcp, CSV_DIR)
 
 # Add custom error handling for stream disconnections
 original_logger = logging.getLogger("mcp.server.streamable_http")
