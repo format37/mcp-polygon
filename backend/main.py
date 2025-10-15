@@ -137,7 +137,7 @@ register_polygon_crypto_macd(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_rsi(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_sma(mcp, polygon_client, CSV_DIR)
 register_polygon_crypto_trades(mcp, polygon_client, CSV_DIR)
-# register_py_eval(mcp, CSV_DIR)
+register_py_eval(mcp, CSV_DIR)
 register_tool_notes(mcp, CSV_DIR)
 
 # Add custom error handling for stream disconnections
