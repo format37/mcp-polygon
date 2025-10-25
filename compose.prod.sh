@@ -1,9 +1,10 @@
+source .env.prod
 #!/bin/bash
 
 # Source the environment file and export all variables
-set -a  # automatically export all variables
-source .env.prod
-set +a  # stop automatically exporting
+# set -a  # automatically export all variables
+# source .env.prod
+# set +a  # stop automatically exporting
 
 echo "🐳 Starting Polygon MCP Server in PRODUCTION mode..."
 

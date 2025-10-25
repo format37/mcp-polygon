@@ -9,8 +9,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    env_file:
-      - .env.prod
+    # env_file:
+    #   - .env.prod
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
