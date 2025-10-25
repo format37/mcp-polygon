@@ -42,14 +42,14 @@ docker rmi -f mcp-polygon-mcp-polygon 2>/dev/null || true
 
 # Build and start services in production mode
 echo "🏗️  Building and starting services in production mode..."
-docker compose -f docker-compose.production.yml up --build -d
+docker compose -f docker-compose.prod.yml up --build -d
 
 echo "✅ Polygon MCP Server is running in production mode!"
 echo "🌐 Service is accessible via reverse proxy"
 echo "🔧 MCP Endpoint: ${MCP_PUBLIC_BASE_URL}/polygon/"
 echo ""
 echo "To check logs:"
-echo "  docker compose -f docker-compose.production.yml logs -f"
+echo "  docker compose -f docker-compose.prod.yml logs -f"
 echo ""
 echo "To stop:"
-echo "  docker compose -f docker-compose.production.yml down"
+echo "  docker compose -f docker-compose.prod.yml down"
