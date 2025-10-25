@@ -4,8 +4,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile.local
     container_name: mcp-polygon-local
-    env_file:
-      - .env.local
+    # env_file:
+    #   - .env.local
     environment:
       - PORT=8009
       - TZ=UTC

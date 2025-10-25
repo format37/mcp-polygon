@@ -1,4 +1,4 @@
-source .env.prod
+# source .env.prod
 #!/bin/bash
 
 # Source the environment file and export all variables
