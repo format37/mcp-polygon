@@ -9,3 +9,4 @@ backend/polygon_tools/__pycache__/
 examples/
 data/
 tech-specs.md
+logging-tech-specs.md

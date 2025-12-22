@@ -10,6 +10,7 @@ import uuid
 import traceback
 import signal
 import os
+from datetime import datetime, timezone
 from contextlib import redirect_stdout, redirect_stderr
 from request_logger import log_request
 
@@ -330,8 +331,6 @@ def register_tool_notes(local_mcp_instance, csv_dir, requests_dir):
         logger.info(f"save_tool_notes invoked by {requester} for tool: {tool_name}")
 
         try:
-            from datetime import datetime
-
             # Ensure directory exists (defensive check)
             notes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -442,4 +441,123 @@ def register_tool_notes(local_mcp_instance, csv_dir, requests_dir):
         except Exception as e:
             logger.error(f"Error reading tool notes: {e}")
             return f"✗ Error reading notes: {str(e)}"
-    
+
+
+def register_request_log(local_mcp_instance, csv_dir, requests_dir):
+    """Register the get_request_log tool for viewing who called tools"""
+
+    @local_mcp_instance.tool()
+    def get_request_log(requester: str, since_datetime: str) -> str:
+        """
+        Get a log of tool requests filtered by datetime.
+
+        This tool reads the request logs and returns a CSV file showing who called
+        which tools and when. Useful for monitoring and auditing tool usage.
+
+        Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'admin', 'monitor-agent').
+                Used for request logging and audit purposes.
+            since_datetime (str): Only include records from this datetime onwards.
+                Format: ISO 8601 format (e.g., '2024-12-22T00:00:00' or '2024-12-22')
+
+        Returns:
+            str: Formatted response with CSV file info, schema, sample data, and Python snippet.
+
+        CSV Output Columns:
+            - datetime (string): When the tool was called (ISO format, sorted ascending)
+            - requester (string): Who called the tool
+            - tool_name (string): Name of the tool that was called
+
+        Example usage:
+            get_request_log(requester="admin", since_datetime="2024-12-22T00:00:00")
+            get_request_log(requester="admin", since_datetime="2024-12-22")
+        """
+        logger.info(f"get_request_log invoked by {requester} with since_datetime: {since_datetime}")
+
+        try:
+            # Parse the input datetime
+            try:
+                # Try full ISO format first
+                if 'T' in since_datetime:
+                    filter_dt = datetime.fromisoformat(since_datetime.replace('Z', '+00:00'))
+                else:
+                    # Date only format
+                    filter_dt = datetime.fromisoformat(since_datetime)
+            except ValueError as e:
+                error_msg = f"Invalid datetime format: {since_datetime}. Use ISO format like '2024-12-22T00:00:00' or '2024-12-22'"
+                logger.error(error_msg)
+                return f"✗ Error: {error_msg}"
+
+            # Read all JSON files from requests directory
+            records = []
+            if requests_dir.exists():
+                for json_file in requests_dir.glob("*.json"):
+                    try:
+                        with open(json_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+
+                        # Parse the timestamp from the record
+                        record_dt_str = data.get("timestamp_iso", "")
+                        if record_dt_str:
+                            record_dt = datetime.fromisoformat(record_dt_str.replace('Z', '+00:00'))
+
+                            # Make filter_dt timezone-aware if record_dt is timezone-aware
+                            if record_dt.tzinfo is not None and filter_dt.tzinfo is None:
+                                filter_dt = filter_dt.replace(tzinfo=timezone.utc)
+
+                            # Filter by datetime
+                            if record_dt >= filter_dt:
+                                records.append({
+                                    "datetime": record_dt_str,
+                                    "requester": data.get("requester", "unknown"),
+                                    "tool_name": data.get("tool_name", "unknown")
+                                })
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"Skipping invalid JSON file {json_file}: {e}")
+                        continue
+
+            # Create DataFrame
+            if records:
+                df = pd.DataFrame(records)
+                # Sort by datetime ascending
+                df = df.sort_values("datetime", ascending=True).reset_index(drop=True)
+            else:
+                # Empty DataFrame with correct columns
+                df = pd.DataFrame(columns=["datetime", "requester", "tool_name"])
+
+            # Generate filename with unique identifier
+            filename = f"request_log_{str(uuid.uuid4())[:8]}.csv"
+            filepath = csv_dir / filename
+
+            # Save to CSV file
+            df.to_csv(filepath, index=False)
+            logger.info(f"Saved request log to {filename} with {len(df)} records")
+
+            # Return formatted response
+            result = format_csv_response(filepath, df)
+
+            # Log the request for audit trail
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="get_request_log",
+                input_params={"since_datetime": since_datetime},
+                output_result=result
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting request log: {e}")
+            error_result = f"✗ Error getting request log: {str(e)}"
+
+            # Log error requests too
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="get_request_log",
+                input_params={"since_datetime": since_datetime},
+                output_result=error_result
+            )
+
+            return error_result

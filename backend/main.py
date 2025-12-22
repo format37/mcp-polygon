@@ -15,8 +15,7 @@ from starlette.routing import Route
 from starlette.routing import Mount
 from mcp.server.fastmcp import FastMCP
 from polygon import RESTClient
-from mcp_service import register_py_eval
-from mcp_service import register_tool_notes
+from mcp_service import register_py_eval, register_tool_notes, register_request_log
 from mcp_resources import register_mcp_resources
 from polygon_tools.news import register_polygon_news
 from polygon_tools.ticker_details import register_polygon_ticker_details
@@ -143,6 +142,7 @@ register_polygon_crypto_sma(mcp, polygon_client, CSV_DIR, REQUESTS_DIR)
 register_polygon_crypto_trades(mcp, polygon_client, CSV_DIR, REQUESTS_DIR)
 register_py_eval(mcp, CSV_DIR, REQUESTS_DIR)
 register_tool_notes(mcp, CSV_DIR, REQUESTS_DIR)
+register_request_log(mcp, CSV_DIR, REQUESTS_DIR)
 
 # Add custom error handling for stream disconnections
 original_logger = logging.getLogger("mcp.server.streamable_http")
@@ -245,9 +245,23 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             finally:
                 MCP_TOKEN_CTX.reset(token_scope)
 
-        # If auth is not required, always allow
+        # If auth is not required, strip any token-like path segment and allow
         if not self.require_auth:
-            logger.info("Auth disabled, allowing request to %s", path)
+            # Check if there's an extra segment that looks like a token in the path
+            # e.g., /polygon/{token} -> /polygon/
+            segs = [s for s in path.split("/") if s != ""]
+            if len(segs) >= 2 and segs[0] == _safe_name:
+                # Strip the second segment (potential token) and rebuild path
+                remainder = "/".join([_safe_name] + segs[2:])
+                new_path = "/" + (remainder + "/" if path.endswith("/") or not segs[2:] else remainder)
+                if new_path == BASE_PATH:
+                    new_path = STREAM_PATH
+                request.scope["path"] = new_path
+                if "raw_path" in request.scope:
+                    request.scope["raw_path"] = new_path.encode("utf-8")
+                logger.info("Auth disabled, rewriting path %s -> %s", path, new_path)
+            else:
+                logger.info("Auth disabled, allowing request to %s", path)
             return await call_next(request)
 
         # If no tokens configured but auth is required
