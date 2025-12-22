@@ -7,6 +7,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +101,11 @@ def fetch_crypto_trades(
     return df
 
 
-def register_polygon_crypto_trades(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_trades(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_trades tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_trades(
+        requester: str,
         ticker: str,
         timestamp: str = "",
         limit: int = 10000
@@ -118,6 +120,8 @@ def register_polygon_crypto_trades(local_mcp_instance, local_polygon_client, csv
         from this foundational trade data.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, required): Cryptocurrency ticker symbol in format X:BASE-QUOTE.
                 Examples: "X:BTC-USD" (Bitcoin/USD), "X:ETH-USD" (Ethereum/USD),
                          "X:SOL-USD" (Solana/USD), "X:ADA-USD" (Cardano/USD),
@@ -226,7 +230,7 @@ def register_polygon_crypto_trades(local_mcp_instance, local_polygon_client, csv
         Example usage:
             polygon_crypto_trades(ticker="X:BTC-USD", timestamp="2023-02-01", limit=1000)
         """
-        logger.info(f"polygon_crypto_trades invoked: ticker={ticker}, timestamp={timestamp or 'recent'}, limit={limit}")
+        logger.info(f"polygon_crypto_trades invoked by {requester}: ticker={ticker}, timestamp={timestamp or 'recent'}, limit={limit}")
 
         try:
             # Convert empty string to None for proper default handling
@@ -252,7 +256,18 @@ def register_polygon_crypto_trades(local_mcp_instance, local_polygon_client, csv
             logger.info(f"Saved crypto trades to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_trades",
+                input_params={"ticker": ticker, "timestamp": timestamp, "limit": limit},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_trades: {e}")

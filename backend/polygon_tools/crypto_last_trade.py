@@ -7,6 +7,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,11 @@ def fetch_crypto_last_trade(
         raise
 
 
-def register_polygon_crypto_last_trade(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_last_trade(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_last_trade tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_last_trade(
+        requester: str,
         from_symbol: str,
         to_symbol: str = "USD"
     ) -> str:
@@ -100,6 +102,8 @@ def register_polygon_crypto_last_trade(local_mcp_instance, local_polygon_client,
         monitoring, rapid decision-making, and integration into crypto trading or analytics tools.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             from_symbol (str, required): The base cryptocurrency symbol.
                 Examples: "BTC" (Bitcoin), "ETH" (Ethereum), "SOL" (Solana), "ADA" (Cardano),
                          "DOGE" (Dogecoin), "MATIC" (Polygon), "AVAX" (Avalanche), "LINK" (Chainlink),
@@ -175,7 +179,7 @@ def register_polygon_crypto_last_trade(local_mcp_instance, local_polygon_client,
 
         Always use py_eval tool to analyze the saved CSV file for trading decisions and real-time insights.
         """
-        logger.info(f"polygon_crypto_last_trade invoked: from_symbol={from_symbol}, to_symbol={to_symbol}")
+        logger.info(f"polygon_crypto_last_trade invoked by {requester}: from_symbol={from_symbol}, to_symbol={to_symbol}")
 
         try:
             # Fetch crypto last trade
@@ -196,7 +200,18 @@ def register_polygon_crypto_last_trade(local_mcp_instance, local_polygon_client,
             logger.info(f"Saved crypto last trade to {filename}")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_last_trade",
+                input_params={"from_symbol": from_symbol, "to_symbol": to_symbol},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_last_trade: {e}")

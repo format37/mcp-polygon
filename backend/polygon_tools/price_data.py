@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 import uuid
 from mcp_service import format_csv_response
+from request_logger import log_request
 import pandas as pd
 from polygon import RESTClient
 import time
@@ -156,11 +157,12 @@ def calculate_price_metrics(price_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(metrics)
 
 
-def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_price_data and polygon_price_metrics tools"""
 
     @local_mcp_instance.tool()
     def polygon_price_data(
+        requester: str,
         tickers: List[str],
         from_date: str = "",
         to_date: str = "",
@@ -171,6 +173,8 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
         Fetch historical price data and save to CSV file.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             tickers (List[str]): List of ticker symbols
             from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
             to_date (str): End date in YYYY-MM-DD format (defaults to today)
@@ -195,7 +199,7 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
         Use this data for: Technical analysis, price trend analysis, volume analysis, OHLC charting, volatility calculations.
         Always use py_eval tool to analyze the saved CSV file.
         """
-        logger.info(f"polygon_price_data invoked with {len(tickers)} tickers, dates {from_date} to {to_date}")
+        logger.info(f"polygon_price_data invoked by {requester} with {len(tickers)} tickers, dates {from_date} to {to_date}")
 
         try:
             # Set default dates if not provided
@@ -223,7 +227,18 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
             logger.info(f"Saved price data to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_price_data",
+                input_params={"tickers": tickers, "from_date": from_date, "to_date": to_date, "timespan": timespan, "multiplier": multiplier},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_price_data: {e}")
@@ -231,6 +246,7 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
 
     @local_mcp_instance.tool()
     def polygon_price_metrics(
+        requester: str,
         tickers: List[str],
         from_date: str = "",
         to_date: str = ""
@@ -239,6 +255,8 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
         Calculate price-based metrics and save to CSV file.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             tickers (List[str]): List of ticker symbols
             from_date (str): Start date in YYYY-MM-DD format (defaults to 30 days ago)
             to_date (str): End date in YYYY-MM-DD format (defaults to today)
@@ -264,7 +282,7 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
         Use this data for: Risk analysis, performance comparison, volatility assessment, return calculations, portfolio optimization.
         Always use py_eval tool to analyze the saved CSV file.
         """
-        logger.info(f"polygon_price_metrics invoked with {len(tickers)} tickers")
+        logger.info(f"polygon_price_metrics invoked by {requester} with {len(tickers)} tickers")
 
         try:
             # Set default dates if not provided
@@ -295,7 +313,18 @@ def register_polygon_price_data(local_mcp_instance, local_polygon_client, csv_di
             logger.info(f"Saved price metrics to {filename} ({len(metrics_df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, metrics_df)
+            result = format_csv_response(filepath, metrics_df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_price_metrics",
+                input_params={"tickers": tickers, "from_date": from_date, "to_date": to_date},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_price_metrics: {e}")

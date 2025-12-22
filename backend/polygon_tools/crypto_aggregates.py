@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 import uuid
 from mcp_service import format_csv_response
+from request_logger import log_request
 import pandas as pd
 from polygon import RESTClient
 
@@ -98,10 +99,11 @@ def fetch_crypto_aggregates(polygon_client: RESTClient,
     return df
 
 
-def register_polygon_crypto_aggregates(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_aggregates(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_aggregates tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_aggregates(
+        requester: str,
         ticker: str,
         from_date: str = "",
         to_date: str = "",
@@ -113,6 +115,8 @@ def register_polygon_crypto_aggregates(local_mcp_instance, local_polygon_client,
         Fetch crypto aggregate bars (OHLCV data) for cryptocurrency trading analysis and save to CSV file.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, required): Cryptocurrency ticker symbol in format X:BASEUSD.
                 Examples: "X:BTCUSD" (Bitcoin/USD), "X:ETHUSD" (Ethereum/USD),
                          "X:SOLUSD" (Solana/USD), "X:ADAUSD" (Cardano/USD),
@@ -182,7 +186,7 @@ def register_polygon_crypto_aggregates(local_mcp_instance, local_polygon_client,
 
         Always use py_eval tool to analyze the saved CSV file for trading decisions.
         """
-        logger.info(f"polygon_crypto_aggregates invoked: ticker={ticker}, from_date={from_date}, to_date={to_date}")
+        logger.info(f"polygon_crypto_aggregates invoked by {requester}: ticker={ticker}, from_date={from_date}, to_date={to_date}")
         logger.info(f"Parameters: timespan={timespan}, multiplier={multiplier}, limit={limit}")
 
         try:
@@ -214,7 +218,18 @@ def register_polygon_crypto_aggregates(local_mcp_instance, local_polygon_client,
             logger.info(f"Saved crypto aggregates to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_aggregates",
+                input_params={"ticker": ticker, "from_date": from_date, "to_date": to_date, "timespan": timespan, "multiplier": multiplier, "limit": limit},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_aggregates: {e}")

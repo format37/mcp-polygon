@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 import uuid
 from mcp_service import format_csv_response
+from request_logger import log_request
 import pandas as pd
 from polygon import RESTClient
 
@@ -85,10 +86,11 @@ def fetch_crypto_previous_close(
         raise
 
 
-def register_polygon_crypto_previous_close(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_previous_close(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_previous_close tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_previous_close(
+        requester: str,
         ticker: str,
         adjusted: bool = True
     ) -> str:
@@ -101,6 +103,8 @@ def register_polygon_crypto_previous_close(local_mcp_instance, local_polygon_cli
         market research, and daily reporting workflows.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, required): Cryptocurrency ticker symbol in format X:BASEUSD.
                 The 'X:' prefix indicates crypto exchange aggregation.
                 Examples:
@@ -175,7 +179,7 @@ def register_polygon_crypto_previous_close(local_mcp_instance, local_polygon_cli
 
         Always use py_eval tool to analyze the saved CSV file for trading decisions and insights.
         """
-        logger.info(f"polygon_crypto_previous_close invoked: ticker={ticker}, adjusted={adjusted}")
+        logger.info(f"polygon_crypto_previous_close invoked by {requester}: ticker={ticker}, adjusted={adjusted}")
 
         try:
             # Fetch crypto previous close data
@@ -198,7 +202,18 @@ def register_polygon_crypto_previous_close(local_mcp_instance, local_polygon_cli
             logger.info(f"Saved crypto previous close to {filename} ({len(df)} record)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_previous_close",
+                input_params={"ticker": ticker, "adjusted": adjusted},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_previous_close: {e}")

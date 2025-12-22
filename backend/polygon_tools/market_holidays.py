@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +79,10 @@ def fetch_market_holidays(
     return df
 
 
-def register_polygon_market_holidays(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_market_holidays(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_market_holidays tool"""
     @local_mcp_instance.tool()
-    def polygon_market_holidays() -> str:
+    def polygon_market_holidays(requester: str) -> str:
         """
         Fetch upcoming market holidays and their corresponding open/close times, and save to CSV file.
 
@@ -90,7 +91,8 @@ def register_polygon_market_holidays(local_mcp_instance, local_polygon_client, c
         and notifying users about upcoming market closures or early closes.
 
         Parameters:
-            None (endpoint automatically returns upcoming holidays)
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
 
         Returns:
             str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
@@ -154,7 +156,7 @@ def register_polygon_market_holidays(local_mcp_instance, local_polygon_client, c
 
         Always use py_eval tool to analyze the saved CSV file for comprehensive holiday planning.
         """
-        logger.info("polygon_market_holidays invoked")
+        logger.info(f"polygon_market_holidays invoked by {requester}")
 
         try:
             # Fetch market holidays
@@ -173,7 +175,18 @@ def register_polygon_market_holidays(local_mcp_instance, local_polygon_client, c
             logger.info(f"Saved market holidays to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_market_holidays",
+                input_params={},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_market_holidays: {e}")

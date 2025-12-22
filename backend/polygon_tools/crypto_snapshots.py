@@ -5,6 +5,7 @@ from typing import Optional, List
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -164,10 +165,11 @@ def fetch_crypto_snapshots(
     return df
 
 
-def register_polygon_crypto_snapshots(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_snapshots(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_snapshots tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_snapshots(
+        requester: str,
         tickers: str = ""
     ) -> str:
         """
@@ -181,6 +183,8 @@ def register_polygon_crypto_snapshots(local_mcp_instance, local_polygon_client, 
         complete, current market information.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             tickers (str, optional): Comma-separated list of cryptocurrency ticker symbols to filter.
                 Format: Crypto tickers in X:BASEUSD format
                 Examples:
@@ -286,7 +290,7 @@ def register_polygon_crypto_snapshots(local_mcp_instance, local_polygon_client, 
 
         Always use py_eval tool to analyze the saved CSV file for comprehensive market insights.
         """
-        logger.info(f"polygon_crypto_snapshots invoked: tickers={tickers if tickers else '(all)'}")
+        logger.info(f"polygon_crypto_snapshots invoked by {requester}: tickers={tickers if tickers else '(all)'}")
 
         try:
             # Parse tickers parameter
@@ -322,7 +326,18 @@ def register_polygon_crypto_snapshots(local_mcp_instance, local_polygon_client, 
             logger.info(f"Saved crypto snapshots to {filename} ({len(df)} crypto pairs)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_snapshots",
+                input_params={"tickers": tickers},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_snapshots: {e}")

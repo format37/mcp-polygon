@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +72,11 @@ def fetch_crypto_exchanges(
     return df
 
 
-def register_polygon_crypto_exchanges(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_exchanges(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_exchanges tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_exchanges(
+        requester: str,
         locale: str = ""
     ) -> str:
         """
@@ -86,6 +88,8 @@ def register_polygon_crypto_exchanges(local_mcp_instance, local_polygon_client, 
         and ensure regulatory compliance.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             locale (str, optional): Filter exchanges by geographical location.
                 Options: "us" (United States), "global" (international)
                 Default: "" (returns all locales)
@@ -147,7 +151,7 @@ def register_polygon_crypto_exchanges(local_mcp_instance, local_polygon_client, 
 
         Always use py_eval tool to analyze the saved CSV file for exchange lookups and filtering.
         """
-        logger.info(f"polygon_crypto_exchanges invoked" + (f": locale={locale}" if locale else ""))
+        logger.info(f"polygon_crypto_exchanges invoked by {requester}" + (f": locale={locale}" if locale else ""))
 
         try:
             # Handle optional parameter (convert empty string to None)
@@ -169,7 +173,18 @@ def register_polygon_crypto_exchanges(local_mcp_instance, local_polygon_client, 
             logger.info(f"Saved crypto exchanges to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_exchanges",
+                input_params={"locale": locale},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_exchanges: {e}")

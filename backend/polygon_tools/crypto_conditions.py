@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -131,10 +132,11 @@ def fetch_crypto_conditions(
     return df
 
 
-def register_polygon_crypto_conditions(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_conditions(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_conditions tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_conditions(
+        requester: str,
         limit: int = 100,
         data_type: str = "",
         condition_id: int = 0,
@@ -150,6 +152,8 @@ def register_polygon_crypto_conditions(local_mcp_instance, local_polygon_client,
         trading activity. Essential for accurate data analysis and algorithmic trading decisions.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             limit (int, optional): Maximum number of condition codes to retrieve.
                 Range: 1-1000
                 Default: 100
@@ -242,7 +246,7 @@ def register_polygon_crypto_conditions(local_mcp_instance, local_polygon_client,
 
         Always use py_eval tool to analyze the saved CSV file for condition code lookups.
         """
-        logger.info(f"polygon_crypto_conditions invoked: limit={limit}, data_type={data_type}")
+        logger.info(f"polygon_crypto_conditions invoked by {requester}: limit={limit}, data_type={data_type}")
 
         try:
             # Handle optional parameters (convert empty strings to None)
@@ -273,7 +277,18 @@ def register_polygon_crypto_conditions(local_mcp_instance, local_polygon_client,
             logger.info(f"Saved crypto conditions to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_conditions",
+                input_params={"limit": limit, "data_type": data_type, "condition_id": condition_id, "sip": sip, "sort": sort, "order": order},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_conditions: {e}")

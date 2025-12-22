@@ -6,6 +6,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +102,10 @@ def fetch_market_status(
         raise
 
 
-def register_polygon_market_status(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_market_status(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_market_status tool"""
     @local_mcp_instance.tool()
-    def polygon_market_status() -> str:
+    def polygon_market_status(requester: str) -> str:
         """
         Fetch current market status across all exchanges and asset classes, and save to CSV file.
 
@@ -113,7 +114,8 @@ def register_polygon_market_status(local_mcp_instance, local_polygon_client, csv
         pre-market/after-hours sessions, along with timing details for the current state.
 
         Parameters:
-            None (endpoint automatically returns current status snapshot)
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
 
         Returns:
             str: Formatted response with file info, schema, sample data, and Python snippet to load the CSV.
@@ -194,7 +196,7 @@ def register_polygon_market_status(local_mcp_instance, local_polygon_client, csv
 
         Always use py_eval tool to analyze the saved CSV file for market status checks and trading decisions.
         """
-        logger.info("polygon_market_status invoked")
+        logger.info(f"polygon_market_status invoked by {requester}")
 
         try:
             # Fetch market status
@@ -213,7 +215,18 @@ def register_polygon_market_status(local_mcp_instance, local_polygon_client, csv
             logger.info(f"Saved market status to {filename}")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_market_status",
+                input_params={},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_market_status: {e}")

@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -151,10 +152,11 @@ def fetch_crypto_snapshot_book(
         raise
 
 
-def register_polygon_crypto_snapshot_book(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_snapshot_book(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_snapshot_book tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_snapshot_book(
+        requester: str,
         ticker: str
     ) -> str:
         """
@@ -173,6 +175,8 @@ def register_polygon_crypto_snapshot_book(local_mcp_instance, local_polygon_clie
         report new information. This provides a real-time view of the order book state.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, required): Cryptocurrency ticker symbol in X:BASEUSD format.
                 Examples:
                 - "X:BTCUSD" (Bitcoin/USD)
@@ -286,7 +290,7 @@ def register_polygon_crypto_snapshot_book(local_mcp_instance, local_polygon_clie
         Example usage:
             polygon_crypto_snapshot_book(ticker="X:BTCUSD")
         """
-        logger.info(f"polygon_crypto_snapshot_book invoked for ticker: {ticker}")
+        logger.info(f"polygon_crypto_snapshot_book invoked by {requester} for ticker: {ticker}")
 
         # Validate ticker parameter
         if not ticker or not ticker.strip():
@@ -314,7 +318,18 @@ def register_polygon_crypto_snapshot_book(local_mcp_instance, local_polygon_clie
             logger.info(f"Saved L2 order book to {filename} ({len(df)} price levels)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_snapshot_book",
+                input_params={"ticker": ticker},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_snapshot_book: {e}")

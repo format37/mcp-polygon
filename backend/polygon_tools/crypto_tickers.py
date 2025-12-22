@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +92,11 @@ def fetch_crypto_tickers(
     return df
 
 
-def register_polygon_crypto_tickers(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_tickers(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_tickers tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_tickers(
+        requester: str,
         ticker: str = "",
         search: str = "",
         active: str = "true",
@@ -109,6 +111,8 @@ def register_polygon_crypto_tickers(local_mcp_instance, local_polygon_client, cs
         crypto market coverage.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, optional): Specific ticker symbol to search for.
                 Format: "X:BTCUSD" (Polygon crypto format with X: prefix)
                 Examples:
@@ -213,7 +217,7 @@ def register_polygon_crypto_tickers(local_mcp_instance, local_polygon_client, cs
             polygon_crypto_tickers(search="BTC", active="true", limit=20)
         """
         logger.info(
-            f"polygon_crypto_tickers invoked: ticker={ticker or 'all'}, "
+            f"polygon_crypto_tickers invoked by {requester}: ticker={ticker or 'all'}, "
             f"search={search or 'none'}, active={active}, limit={limit}"
         )
 
@@ -249,7 +253,18 @@ def register_polygon_crypto_tickers(local_mcp_instance, local_polygon_client, cs
             logger.info(f"Saved crypto tickers to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_tickers",
+                input_params={"ticker": ticker, "search": search, "active": active, "limit": limit},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_tickers: {e}")

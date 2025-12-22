@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,11 @@ def fetch_crypto_grouped_daily_bars(
         raise
 
 
-def register_polygon_crypto_grouped_daily(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_grouped_daily(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_grouped_daily_bars tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_grouped_daily_bars(
+        requester: str,
         date: str,
         adjusted: bool = True
     ) -> str:
@@ -95,6 +97,8 @@ def register_polygon_crypto_grouped_daily(local_mcp_instance, local_polygon_clie
         performance across the entire crypto market, and bulk data processing for research.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             date (str, required): The date for which to fetch grouped daily bars.
                 Format: YYYY-MM-DD
                 Examples: "2024-01-15", "2023-12-31", "2024-03-20"
@@ -160,7 +164,7 @@ def register_polygon_crypto_grouped_daily(local_mcp_instance, local_polygon_clie
 
         Always use py_eval tool to analyze the saved CSV file for comprehensive market insights.
         """
-        logger.info(f"polygon_crypto_grouped_daily_bars invoked: date={date}, adjusted={adjusted}")
+        logger.info(f"polygon_crypto_grouped_daily_bars invoked by {requester}: date={date}, adjusted={adjusted}")
 
         try:
             # Fetch crypto grouped daily bars
@@ -182,7 +186,18 @@ def register_polygon_crypto_grouped_daily(local_mcp_instance, local_polygon_clie
             logger.info(f"Saved crypto grouped daily bars to {filename} ({len(df)} crypto pairs)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_grouped_daily_bars",
+                input_params={"date": date, "adjusted": adjusted},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_grouped_daily_bars: {e}")

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 import uuid
 from mcp_service import format_csv_response
+from request_logger import log_request
 import pandas as pd
 from polygon import RESTClient
 
@@ -105,10 +106,11 @@ def fetch_crypto_ema(
     return df
 
 
-def register_polygon_crypto_ema(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_ema(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_ema tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_ema(
+        requester: str,
         ticker: str,
         timespan: str = "day",
         window: int = 50,
@@ -125,6 +127,8 @@ def register_polygon_crypto_ema(local_mcp_instance, local_polygon_client, csv_di
         and dynamic support/resistance levels in crypto trading.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, required): Cryptocurrency ticker symbol in format X:BASEUSD.
                 Examples: "X:BTCUSD" (Bitcoin/USD), "X:ETHUSD" (Ethereum/USD),
                          "X:SOLUSD" (Solana/USD), "X:ADAUSD" (Cardano/USD),
@@ -221,7 +225,7 @@ def register_polygon_crypto_ema(local_mcp_instance, local_polygon_client, csv_di
             # Get 200-day EMA for long-term trend (major support/resistance)
             polygon_crypto_ema(ticker="X:BTCUSD", timespan="day", window=200, series_type="close", limit=250)
         """
-        logger.info(f"polygon_crypto_ema invoked: ticker={ticker}, timespan={timespan}, window={window}")
+        logger.info(f"polygon_crypto_ema invoked by {requester}: ticker={ticker}, timespan={timespan}, window={window}")
         logger.info(f"Parameters: series_type={series_type}, limit={limit}")
 
         try:
@@ -256,7 +260,18 @@ def register_polygon_crypto_ema(local_mcp_instance, local_polygon_client, csv_di
             logger.info(f"Saved EMA data to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_ema",
+                input_params={"ticker": ticker, "timespan": timespan, "window": window, "series_type": series_type, "limit": limit, "timestamp_gte": timestamp_gte, "timestamp_lte": timestamp_lte},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_ema: {e}")

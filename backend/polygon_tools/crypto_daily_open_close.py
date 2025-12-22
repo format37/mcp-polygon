@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 import uuid
 from mcp_service import format_csv_response
+from request_logger import log_request
 import pandas as pd
 from polygon import RESTClient
 
@@ -105,10 +106,11 @@ def fetch_crypto_daily_open_close(
         raise
 
 
-def register_polygon_crypto_daily_open_close(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_daily_open_close(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_daily_open_close tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_daily_open_close(
+        requester: str,
         ticker: str,
         date: str,
         adjusted: bool = True
@@ -120,6 +122,8 @@ def register_polygon_crypto_daily_open_close(local_mcp_instance, local_polygon_c
         pricing details for performance evaluation, historical analysis, and trading activity insights.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, required): Cryptocurrency ticker symbol in format X:BASEUSD.
                 The 'X:' prefix indicates crypto exchange aggregation.
                 Examples:
@@ -191,7 +195,7 @@ def register_polygon_crypto_daily_open_close(local_mcp_instance, local_polygon_c
 
         Always use py_eval tool to analyze the saved CSV file for trading decisions and insights.
         """
-        logger.info(f"polygon_crypto_daily_open_close invoked: ticker={ticker}, date={date}, adjusted={adjusted}")
+        logger.info(f"polygon_crypto_daily_open_close invoked by {requester}: ticker={ticker}, date={date}, adjusted={adjusted}")
 
         try:
             # Fetch crypto daily open/close data
@@ -216,7 +220,18 @@ def register_polygon_crypto_daily_open_close(local_mcp_instance, local_polygon_c
             logger.info(f"Saved crypto daily open/close to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_daily_open_close",
+                input_params={"ticker": ticker, "date": date, "adjusted": adjusted},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_daily_open_close: {e}")

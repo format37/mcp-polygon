@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 import uuid
 from mcp_service import format_csv_response
+from request_logger import log_request
 import pandas as pd
 from polygon import RESTClient
 from typing import Optional
@@ -122,10 +123,11 @@ def fetch_news(
     return df
 
 
-def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_news tool"""
     @local_mcp_instance.tool()
     def polygon_news(
+        requester: str,
         ticker: str = "",
         start_date: str = "",
         end_date: str = "",
@@ -139,6 +141,8 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
         to prevent request timeouts.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             ticker (str, optional): Specific ticker symbol to fetch news for (e.g., 'AAPL', 'TSLA').
                 If not provided or empty, fetches general market news.
             start_date (str, optional): Start date in 'YYYY-MM-DD' format.
@@ -172,7 +176,7 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
         limit = 1000  # Fixed limit to max 1000 for performance
 
         logger.info(
-            f"polygon_news tool invoked: ticker={ticker or 'general'}, "
+            f"polygon_news tool invoked by {requester}: ticker={ticker or 'general'}, "
             f"start_date={start_date or 'default'}, end_date={end_date or 'default'}, limit={limit}"
         )
 
@@ -201,4 +205,15 @@ def register_polygon_news(local_mcp_instance, local_polygon_client, csv_dir):
         logger.info(f"Saved news data to {filename} ({len(df)} records)")
 
         # Return formatted response
-        return format_csv_response(filepath, df)
+        result = format_csv_response(filepath, df)
+
+        # Log the request
+        log_request(
+            requests_dir=requests_dir,
+            requester=requester,
+            tool_name="polygon_news",
+            input_params={"ticker": ticker, "start_date": start_date, "end_date": end_date},
+            output_result=result
+        )
+
+        return result

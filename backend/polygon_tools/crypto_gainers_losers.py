@@ -5,6 +5,7 @@ from typing import Literal
 from pathlib import Path
 from polygon import RESTClient
 from mcp_service import format_csv_response
+from request_logger import log_request
 
 logger = logging.getLogger(__name__)
 
@@ -160,10 +161,11 @@ def fetch_crypto_gainers_losers(
     return df
 
 
-def register_polygon_crypto_gainers_losers(local_mcp_instance, local_polygon_client, csv_dir):
+def register_polygon_crypto_gainers_losers(local_mcp_instance, local_polygon_client, csv_dir, requests_dir):
     """Register the polygon_crypto_gainers_losers tool"""
     @local_mcp_instance.tool()
     def polygon_crypto_gainers_losers(
+        requester: str,
         direction: str = "gainers"
     ) -> str:
         """
@@ -183,6 +185,8 @@ def register_polygon_crypto_gainers_losers(local_mcp_instance, local_polygon_cli
         - Assets requiring immediate attention in portfolios
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             direction (str): Direction to fetch - either "gainers" or "losers"
                 - "gainers": Returns top 20 cryptocurrencies with largest % increase (default)
                 - "losers": Returns top 20 cryptocurrencies with largest % decrease
@@ -314,7 +318,7 @@ def register_polygon_crypto_gainers_losers(local_mcp_instance, local_polygon_cli
 
         Always use py_eval tool to analyze the saved CSV file for actionable trading insights.
         """
-        logger.info(f"polygon_crypto_gainers_losers invoked: direction={direction}")
+        logger.info(f"polygon_crypto_gainers_losers invoked by {requester}: direction={direction}")
 
         # Validate direction parameter
         if direction.lower() not in ["gainers", "losers"]:
@@ -339,7 +343,18 @@ def register_polygon_crypto_gainers_losers(local_mcp_instance, local_polygon_cli
             logger.info(f"Saved crypto {direction} to {filename} ({len(df)} records)")
 
             # Return formatted response
-            return format_csv_response(filepath, df)
+            result = format_csv_response(filepath, df)
+
+            # Log the request
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="polygon_crypto_gainers_losers",
+                input_params={"direction": direction},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error in polygon_crypto_gainers_losers: {e}")

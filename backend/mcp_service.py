@@ -11,6 +11,7 @@ import traceback
 import signal
 import os
 from contextlib import redirect_stdout, redirect_stderr
+from request_logger import log_request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -199,14 +200,16 @@ Python snippet to load:
         raise
 
 
-def register_py_eval(local_mcp_instance, csv_dir):
+def register_py_eval(local_mcp_instance, csv_dir, requests_dir):
     """Register the py_eval tool for Python code execution"""
     @local_mcp_instance.tool()
-    def py_eval(code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
+    def py_eval(requester: str, code: str, timeout_sec: float = 5.0) -> Dict[str, Any]:
         """
         Execute Python code with pandas/numpy pre-loaded and access to CSV folder.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             code (str): Python code to execute
             timeout_sec (float): Execution timeout in seconds (default: 5.0)
 
@@ -218,7 +221,7 @@ def register_py_eval(local_mcp_instance, csv_dir):
             - np: numpy library
             - CSV_PATH: path to data/mcp-polygon folder for reading/writing CSV files
         """
-        logger.info(f"py_eval invoked with {len(code)} characters of code")
+        logger.info(f"py_eval invoked by {requester} with {len(code)} characters of code")
 
         # Capture output
         buf_out, buf_err = io.StringIO(), io.StringIO()
@@ -258,9 +261,22 @@ def register_py_eval(local_mcp_instance, csv_dir):
         }
 
         logger.info(f"py_eval completed: ok={ok}, duration={duration_ms}ms")
+
+        # Log the request (truncate code in input_params)
+        log_request(
+            requests_dir=requests_dir,
+            requester=requester,
+            tool_name="py_eval",
+            input_params={
+                "code": code[:500] + "..." if len(code) > 500 else code,
+                "timeout_sec": timeout_sec
+            },
+            output_result=result
+        )
+
         return result
     
-def register_tool_notes(local_mcp_instance, csv_dir):
+def register_tool_notes(local_mcp_instance, csv_dir, requests_dir):
     """Register tools for saving and reading tool usage notes"""
 
     # Create tool_notes directory path
@@ -269,7 +285,7 @@ def register_tool_notes(local_mcp_instance, csv_dir):
 
     @local_mcp_instance.tool()
     # @with_sentry_tracing("save_tool_notes")
-    def save_tool_notes(tool_name: str, markdown_notes: str) -> str:
+    def save_tool_notes(requester: str, tool_name: str, markdown_notes: str) -> str:
         """
         Save usage notes and lessons learned about any MCP tool.
 
@@ -278,6 +294,8 @@ def register_tool_notes(local_mcp_instance, csv_dir):
         to create a historical record of lessons learned.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             tool_name (str): Name of the tool to document (e.g., 'polygon_market_status', 'py_eval')
             markdown_notes (str): Concise markdown-formatted notes about tool usage. Include:
                 - Parameter issues or gotchas discovered
@@ -298,6 +316,7 @@ def register_tool_notes(local_mcp_instance, csv_dir):
 
         Example usage:
             save_tool_notes(
+                requester="trading-agent",
                 tool_name="polygon_crypto_aggregates",
                 markdown_notes="**Parameter Issue:** The `multiplier` and `timespan` parameters must match valid combinations. For example, multiplier=1 with timespan='minute' works, but multiplier=15 requires timespan='minute' for 15-minute bars."
             )
@@ -308,7 +327,7 @@ def register_tool_notes(local_mcp_instance, csv_dir):
             - Use markdown formatting for better readability
             - Keep notes concise and actionable
         """
-        logger.info(f"save_tool_notes invoked for tool: {tool_name}")
+        logger.info(f"save_tool_notes invoked by {requester} for tool: {tool_name}")
 
         try:
             from datetime import datetime
@@ -336,7 +355,17 @@ def register_tool_notes(local_mcp_instance, csv_dir):
 
             logger.info(f"Notes saved to {notes_file}")
 
-            return f"✓ Notes saved successfully\n\nTool: {tool_name}\nFile: tool_notes/{safe_tool_name}.md\nTimestamp: {timestamp}"
+            result = f"✓ Notes saved successfully\n\nTool: {tool_name}\nFile: tool_notes/{safe_tool_name}.md\nTimestamp: {timestamp}"
+
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="save_tool_notes",
+                input_params={"tool_name": tool_name, "markdown_notes": markdown_notes[:500] + "..." if len(markdown_notes) > 500 else markdown_notes},
+                output_result=result
+            )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error saving tool notes: {e}")
@@ -344,7 +373,7 @@ def register_tool_notes(local_mcp_instance, csv_dir):
 
     @local_mcp_instance.tool()
     # @with_sentry_tracing("read_tool_notes")
-    def read_tool_notes(tool_name: str) -> str:
+    def read_tool_notes(requester: str, tool_name: str) -> str:
         """
         Read all historical usage notes for a specific MCP tool.
 
@@ -353,6 +382,8 @@ def register_tool_notes(local_mcp_instance, csv_dir):
         calling complex tools to avoid known issues.
 
         Parameters:
+            requester (str): Identifier of who is calling this tool (e.g., 'trading-agent', 'user-alex').
+                Used for request logging and audit purposes.
             tool_name (str): Name of the tool to read notes for (e.g., 'polygon_market_status')
 
         Returns:
@@ -366,14 +397,14 @@ def register_tool_notes(local_mcp_instance, csv_dir):
             - Troubleshoot errors by checking if similar issues were solved before
 
         Example usage:
-            read_tool_notes(tool_name="polygon_market_status")
+            read_tool_notes(requester="trading-agent", tool_name="polygon_market_status")
 
         Note:
             - Returns chronological history of all notes saved for the tool
             - Returns "No notes found" if no notes have been saved yet
             - Notes include timestamps showing when each lesson was learned
         """
-        logger.info(f"read_tool_notes invoked for tool: {tool_name}")
+        logger.info(f"read_tool_notes invoked by {requester} for tool: {tool_name}")
 
         try:
             # Sanitize tool name for filename
@@ -382,13 +413,29 @@ def register_tool_notes(local_mcp_instance, csv_dir):
 
             # Check if notes file exists
             if not notes_file.exists():
-                return f"No notes found for tool: {tool_name}\n\nUse save_tool_notes() to create the first note for this tool."
+                result = f"No notes found for tool: {tool_name}\n\nUse save_tool_notes() to create the first note for this tool."
+                log_request(
+                    requests_dir=requests_dir,
+                    requester=requester,
+                    tool_name="read_tool_notes",
+                    input_params={"tool_name": tool_name},
+                    output_result=result
+                )
+                return result
 
             # Read and return the content
             with open(notes_file, 'r', encoding='utf-8') as f:
                 content = f.read()
 
             logger.info(f"Read {len(content)} characters of notes for {tool_name}")
+
+            log_request(
+                requests_dir=requests_dir,
+                requester=requester,
+                tool_name="read_tool_notes",
+                input_params={"tool_name": tool_name},
+                output_result=content
+            )
 
             return content
 

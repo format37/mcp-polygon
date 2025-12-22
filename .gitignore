@@ -5,5 +5,7 @@ prompt_b.md
 prompt_c.md
 csv/
 backend/__pycache__/
+backend/polygon_tools/__pycache__/
 examples/
 data/
+tech-specs.md
